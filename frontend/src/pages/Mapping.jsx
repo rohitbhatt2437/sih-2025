@@ -7,6 +7,55 @@ export default function Mapping() {
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
   const [error, setError] = useState(null);
+  // Registry of layer groups to control (add new entries here as you add layers)
+  const layerGroups = [
+    {
+      id: "arcgis-features",
+      label: "Water Bodies",
+      // These suffixes correspond to how addArcGISFeatureLayer names sublayers
+      sublayers: ["-fill", "-outline", "-line", "-circle"],
+    },
+  ];
+
+  // Track which groups are visible
+  const [visibleGroups, setVisibleGroups] = useState(
+    () => new Set(layerGroups.map((g) => g.id))
+  );
+
+  // Base map styles
+  const styles = [
+    { key: "streets", label: "Streets", url: "mapbox://styles/mapbox/streets-v12" },
+    { key: "satellite", label: "Satellite", url: "mapbox://styles/mapbox/satellite-streets-v12" },
+  ];
+  const [selectedStyle, setSelectedStyle] = useState(styles[0]);
+
+  // Helper to apply current visibility to map layers
+  const applyVisibility = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    layerGroups.forEach((group) => {
+      const isVisible = visibleGroups.has(group.id);
+      // Toggle potential sublayers (if they exist)
+      group.sublayers.forEach((suffix) => {
+        const layerId = `${group.id}${suffix}`;
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(
+            layerId,
+            "visibility",
+            isVisible ? "visible" : "none"
+          );
+        }
+      });
+      // Also toggle a base layer with the same id (e.g., raster tiles), if present
+      if (map.getLayer(group.id)) {
+        map.setLayoutProperty(
+          group.id,
+          "visibility",
+          isVisible ? "visible" : "none"
+        );
+      }
+    });
+  };
 
   useEffect(() => {
     const token = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -20,14 +69,13 @@ export default function Mapping() {
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center: [77.209, 28.6139], // Delhi approx
-      zoom: 9,
+      style: selectedStyle.url,
+      center: [78.56, 25.45], // Jhansi approx (lng, lat)
+      zoom: 10,
       attributionControl: true,
     });
     mapRef.current = map;
 
-    map.addControl(new mapboxgl.NavigationControl(), "top-right");
     map.addControl(new mapboxgl.ScaleControl({ unit: "metric" }), "bottom-left");
 
     map.on("load", async () => {
@@ -41,6 +89,8 @@ export default function Mapping() {
           id: "arcgis-features",
           featureServerUrl,
         });
+        // Apply current visibility preferences once layers are added
+        applyVisibility();
       } catch (e) {
         console.error(e);
         setError(
@@ -65,6 +115,38 @@ export default function Mapping() {
     };
   }, []);
 
+  // When base style changes, update the map style and re-add our custom layers
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    // Change style
+    map.setStyle(selectedStyle.url);
+    // After style loads, re-add sources/layers and apply visibility
+    const onStyleLoad = async () => {
+      try {
+        await addArcGISFeatureLayer(map, {
+          id: "arcgis-features",
+          featureServerUrl:
+            "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(4)/FeatureServer/0",
+        });
+      } catch (e) {
+        console.error(e);
+      }
+      applyVisibility();
+    };
+    map.once("style.load", onStyleLoad);
+    return () => {
+      map.off("style.load", onStyleLoad);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStyle]);
+
+  // Re-apply visibility any time the toggles change
+  useEffect(() => {
+    applyVisibility();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleGroups]);
+
   return (
     <div className="relative h-full">
       {/* Overlay header and error, non-blocking */}
@@ -79,6 +161,61 @@ export default function Mapping() {
 
       {/* Full-bleed map fills the space between header and footer */}
       <div ref={mapContainer} className="absolute inset-0 w-full h-full" />
+
+      {/* Top-right Base Map Style Selector */}
+      <div className="absolute right-3 top-3 z-10">
+        <div className="bg-white/90 backdrop-blur rounded-lg shadow border border-gray-200 px-3 py-2">
+          <label className="block text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-1">
+            Base Map
+          </label>
+          <select
+            className="text-sm px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/90"
+            value={selectedStyle.key}
+            onChange={(e) => {
+              const next = styles.find((s) => s.key === e.target.value);
+              if (next) setSelectedStyle(next);
+            }}
+          >
+            {styles.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Bottom-left layer toggles (positioned above ScaleControl to avoid overlap) */}
+      <div className="absolute left-3 bottom-16 z-10">
+        <div className="bg-white/90 backdrop-blur rounded-lg shadow border border-gray-200 px-3 py-2 min-w-[160px]">
+          <div className="text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-1">
+            Layers
+          </div>
+          <div className="space-y-1">
+            {layerGroups.map((g) => (
+              <label
+                key={g.id}
+                className="flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500"
+                  checked={visibleGroups.has(g.id)}
+                  onChange={(e) =>
+                    setVisibleGroups((prev) => {
+                      const next = new Set(prev);
+                      if (e.target.checked) next.add(g.id);
+                      else next.delete(g.id);
+                      return next;
+                    })
+                  }
+                />
+                <span>{g.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
