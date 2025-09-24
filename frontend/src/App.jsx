@@ -6,6 +6,7 @@ import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import Home from './pages/Home'
 import Mapping from './pages/Mapping'
+import OCR from './pages/OCR'
 
 function App() {
   const location = useLocation();
@@ -28,6 +29,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/mapping" element={<Mapping />} />
+            <Route path="/ocr" element={<OCR />} />
           </Routes>
         </section>
       </main>

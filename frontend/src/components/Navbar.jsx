@@ -58,7 +58,7 @@ export default function Navbar() {
               )}
             </li>
             <li><Link to="/mapping" className={navItemClass}>Mapping</Link></li>
-            <li><a href="#" className={navItemClass}>Report Water Body</a></li>
+            <li><Link to="/ocr" className={navItemClass}>OCR</Link></li>
             <li><a href="#" className={navItemClass}>Sensor Data</a></li>
             <li><a href="#" className={navItemClass}>Upload Recent Image</a></li>
             <li><a href="#" className={navItemClass}>Water Quality Map</a></li>
@@ -83,7 +83,7 @@ export default function Navbar() {
               </div>
             )}
             <Link to="/mapping" className="block py-2 text-sm" onClick={() => setOpen(false)}>Mapping</Link>
-            <a href="#" className="block py-2 text-sm">Report Water Body</a>
+            <Link to="/ocr" className="block py-2 text-sm" onClick={() => setOpen(false)}>OCR</Link>
             <a href="#" className="block py-2 text-sm">Sensor Data</a>
             <a href="#" className="block py-2 text-sm">Upload Recent Image</a>
             <a href="#" className="block py-2 text-sm">Water Quality Map</a>

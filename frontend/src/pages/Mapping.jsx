@@ -15,6 +15,12 @@ export default function Mapping() {
       // These suffixes correspond to how addArcGISFeatureLayer names sublayers
       sublayers: ["-fill", "-outline", "-line", "-circle"],
     },
+    {
+      id: "boundaries-layer",
+      label: "Boundaries",
+      // These suffixes correspond to how addArcGISFeatureLayer names sublayers
+      sublayers: ["-fill", "-outline", "-line", "-circle"],
+    },
   ];
 
   // Track which groups are visible
@@ -81,20 +87,25 @@ export default function Mapping() {
     map.on("load", async () => {
       // Ensure proper sizing when the container becomes full-bleed
       map.resize();
-      // Load ArcGIS FeatureServer as GeoJSON
-      const featureServerUrl =
-        "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(4)/FeatureServer/0";
       try {
+        // Load Water Bodies layer
         await addArcGISFeatureLayer(map, {
           id: "arcgis-features",
-          featureServerUrl,
+          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(4)/FeatureServer/0",
         });
+
+        // Load Boundaries layer
+        await addArcGISFeatureLayer(map, {
+          id: "boundaries-layer",
+          featureServerUrl: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Countries_(Generalized)/FeatureServer/0"
+        });
+        
         // Apply current visibility preferences once layers are added
         applyVisibility();
       } catch (e) {
         console.error(e);
         setError(
-          "Failed to load ArcGIS layer. Check console for details or CORS issues."
+          "Failed to load map layers. Check console for details or CORS issues."
         );
       }
     });
@@ -124,10 +135,16 @@ export default function Mapping() {
     // After style loads, re-add sources/layers and apply visibility
     const onStyleLoad = async () => {
       try {
+        // Re-add Water Bodies layer
         await addArcGISFeatureLayer(map, {
           id: "arcgis-features",
-          featureServerUrl:
-            "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(4)/FeatureServer/0",
+          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(4)/FeatureServer/0",
+        });
+        
+        // Re-add Boundaries layer
+        await addArcGISFeatureLayer(map, {
+          id: "boundaries-layer",
+          featureServerUrl: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Countries_(Generalized)/FeatureServer/0"
         });
       } catch (e) {
         console.error(e);
