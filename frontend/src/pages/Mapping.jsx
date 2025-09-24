@@ -91,14 +91,31 @@ export default function Mapping() {
         // Load Water Bodies layer
         await addArcGISFeatureLayer(map, {
           id: "arcgis-features",
-          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(4)/FeatureServer/0",
+          featureServerUrl: "https://livingatlas.esri.in/server1/rest/services/Water/Surface_Water_Bodies/MapServer/0",
         });
+        // Darken water bodies style
+        if (map.getLayer("arcgis-features-fill")) {
+          map.setPaintProperty("arcgis-features-fill", "fill-color", "#0000FF");
+          map.setPaintProperty("arcgis-features-fill", "fill-opacity", 0.4);
+        }
+        if (map.getLayer("arcgis-features-outline")) {
+          map.setPaintProperty("arcgis-features-outline", "line-color", "#0000FF");
+          map.setPaintProperty("arcgis-features-outline", "line-width", 1.5);
+        }
 
         // Load Boundaries layer
         await addArcGISFeatureLayer(map, {
           id: "boundaries-layer",
-          featureServerUrl: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Countries_(Generalized)/FeatureServer/0"
+          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer/FeatureServer/0"
         });
+        // Ensure boundaries don't cover thematic layers:
+        // use fill-outline-color on the fill layer (polygon outlines render via fill-outline-color)
+        if (map.getLayer("boundaries-layer-fill")) {
+          map.setPaintProperty("boundaries-layer-fill", "fill-opacity", 0);
+          map.setPaintProperty("boundaries-layer-fill", "fill-outline-color", "#000000");
+          // Move to top so outline is clearly visible
+          try { map.moveLayer("boundaries-layer-fill"); } catch (_) {}
+        }
         
         // Apply current visibility preferences once layers are added
         applyVisibility();
@@ -138,14 +155,30 @@ export default function Mapping() {
         // Re-add Water Bodies layer
         await addArcGISFeatureLayer(map, {
           id: "arcgis-features",
-          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(4)/FeatureServer/0",
+          featureServerUrl: "https://livingatlas.esri.in/server1/rest/services/Water/Surface_Water_Bodies/MapServer/0",
         });
+        // Apply water bodies style after style reload
+        if (map.getLayer("arcgis-features-fill")) {
+          map.setPaintProperty("arcgis-features-fill", "fill-color", "#0000FF");
+          map.setPaintProperty("arcgis-features-fill", "fill-opacity", 0.4);
+        }
+        if (map.getLayer("arcgis-features-outline")) {
+          map.setPaintProperty("arcgis-features-outline", "line-color", "#0000FF");
+          map.setPaintProperty("arcgis-features-outline", "line-width", 1.5);
+        }
         
         // Re-add Boundaries layer
         await addArcGISFeatureLayer(map, {
           id: "boundaries-layer",
-          featureServerUrl: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Countries_(Generalized)/FeatureServer/0"
+          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer/FeatureServer/0"
         });
+        // Ensure boundaries don't cover thematic layers (after style reload)
+        if (map.getLayer("boundaries-layer-fill")) {
+          map.setPaintProperty("boundaries-layer-fill", "fill-opacity", 0);
+          map.setPaintProperty("boundaries-layer-fill", "fill-outline-color", "#000000");
+          // Move to top so outline is clearly visible
+          try { map.moveLayer("boundaries-layer-fill"); } catch (_) {}
+        }
       } catch (e) {
         console.error(e);
       }

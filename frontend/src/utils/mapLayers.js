@@ -19,13 +19,31 @@ export function addArcGISTileLayer(map, { id, tiles, tileSize = 256, attribution
 // Load ArcGIS FeatureServer as GeoJSON via /query?f=geojson
 export async function addArcGISFeatureLayer(
   map,
-  { id, featureServerUrl, where = "1=1", outFields = "*" }
+  { id, featureServerUrl, where = "1=1", outFields = "*", fit = true }
 ) {
-  const queryUrl = `${featureServerUrl}/query?where=${encodeURIComponent(
-    where
-  )}&outFields=${encodeURIComponent(outFields)}&outSR=4326&f=geojson`;
+  const baseParams = {
+    where,
+    outFields,
+    outSR: 4326,
+    f: "geojson",
+  };
 
-  const resp = await fetch(queryUrl);
+  async function postQuery(params) {
+    const resp = await fetch(`${featureServerUrl}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(),
+    });
+    return resp;
+  }
+
+  // First attempt: geoJSON with outSR
+  let resp = await postQuery(baseParams);
+  // Retry without outSR if server errors (some services choke on reprojection)
+  if (!resp.ok && resp.status >= 500) {
+    const { outSR, ...noSr } = baseParams;
+    resp = await postQuery(noSr);
+  }
   if (!resp.ok) throw new Error(`ArcGIS query failed: ${resp.status}`);
   const geojson = await resp.json();
 
@@ -85,14 +103,26 @@ export async function addArcGISFeatureLayer(
     });
   }
 
-  // Optional: fit bounds to the layer features
-  try {
-    const bounds = new mapboxgl.LngLatBounds();
-    (geojson.features || []).forEach((f) => {
-      if (f.geometry && f.geometry.type === "Point") {
-        bounds.extend(f.geometry.coordinates);
-      }
-    });
-    if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, duration: 800 });
-  } catch (_) {}
+  // Optional: fit bounds to the layer features (supports Points and Polygons)
+  if (fit) {
+    try {
+      const bounds = new mapboxgl.LngLatBounds();
+      (geojson.features || []).forEach((f) => {
+        const g = f.geometry;
+        if (!g) return;
+        if (g.type === "Point") {
+          bounds.extend(g.coordinates);
+        } else if (g.type === "MultiPoint") {
+          g.coordinates.forEach((c) => bounds.extend(c));
+        } else if (g.type === "Polygon") {
+          // coordinates: [ [ring...] , [hole...] ] ; take all rings
+          g.coordinates.forEach((ring) => ring.forEach((c) => bounds.extend(c)));
+        } else if (g.type === "MultiPolygon") {
+          // coordinates: [ [ [ring...] ] ]
+          g.coordinates.forEach((poly) => poly.forEach((ring) => ring.forEach((c) => bounds.extend(c))));
+        }
+      });
+      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, duration: 800 });
+    } catch (_) {}
+  }
 }
