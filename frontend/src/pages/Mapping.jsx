@@ -16,6 +16,12 @@ export default function Mapping() {
       sublayers: ["-fill", "-outline", "-line", "-circle"],
     },
     {
+      id: "district-boundaries",
+      label: "District Boundaries",
+      // These suffixes correspond to how addArcGISFeatureLayer names sublayers
+      sublayers: ["-fill", "-outline", "-line", "-circle"],
+    },
+    {
       id: "boundaries-layer",
       label: "Boundaries",
       // These suffixes correspond to how addArcGISFeatureLayer names sublayers
@@ -24,9 +30,7 @@ export default function Mapping() {
   ];
 
   // Track which groups are visible
-  const [visibleGroups, setVisibleGroups] = useState(
-    () => new Set(layerGroups.map((g) => g.id))
-  );
+  const [visibleGroups, setVisibleGroups] = useState(() => new Set());
 
   // Base map styles
   const styles = [
@@ -103,17 +107,28 @@ export default function Mapping() {
           map.setPaintProperty("arcgis-features-outline", "line-width", 1.5);
         }
 
-        // Load Boundaries layer
+        // Load District Boundaries layer
         await addArcGISFeatureLayer(map, {
-          id: "boundaries-layer",
-          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer/FeatureServer/0"
+          id: "district-boundaries",
+          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(7)/FeatureServer/0"
         });
         // Ensure boundaries don't cover thematic layers:
         // use fill-outline-color on the fill layer (polygon outlines render via fill-outline-color)
+        if (map.getLayer("district-boundaries-fill")) {
+          map.setPaintProperty("district-boundaries-fill", "fill-opacity", 0);
+          map.setPaintProperty("district-boundaries-fill", "fill-outline-color", "#000000");
+          // Move to top so outline is clearly visible
+          try { map.moveLayer("district-boundaries-fill"); } catch (_) {}
+        }
+
+        // Load original Boundaries layer
+        await addArcGISFeatureLayer(map, {
+          id: "boundaries-layer",
+          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer/FeatureServer/0",
+        });
         if (map.getLayer("boundaries-layer-fill")) {
           map.setPaintProperty("boundaries-layer-fill", "fill-opacity", 0);
           map.setPaintProperty("boundaries-layer-fill", "fill-outline-color", "#000000");
-          // Move to top so outline is clearly visible
           try { map.moveLayer("boundaries-layer-fill"); } catch (_) {}
         }
         
@@ -167,16 +182,27 @@ export default function Mapping() {
           map.setPaintProperty("arcgis-features-outline", "line-width", 1.5);
         }
         
-        // Re-add Boundaries layer
+        // Re-add District Boundaries layer
         await addArcGISFeatureLayer(map, {
-          id: "boundaries-layer",
-          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer/FeatureServer/0"
+          id: "district-boundaries",
+          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer_(7)/FeatureServer/0"
         });
         // Ensure boundaries don't cover thematic layers (after style reload)
+        if (map.getLayer("district-boundaries-fill")) {
+          map.setPaintProperty("district-boundaries-fill", "fill-opacity", 0);
+          map.setPaintProperty("district-boundaries-fill", "fill-outline-color", "#000000");
+          // Move to top so outline is clearly visible
+          try { map.moveLayer("district-boundaries-fill"); } catch (_) {}
+        }
+
+        // Re-add original Boundaries layer
+        await addArcGISFeatureLayer(map, {
+          id: "boundaries-layer",
+          featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer/FeatureServer/0",
+        });
         if (map.getLayer("boundaries-layer-fill")) {
           map.setPaintProperty("boundaries-layer-fill", "fill-opacity", 0);
           map.setPaintProperty("boundaries-layer-fill", "fill-outline-color", "#000000");
-          // Move to top so outline is clearly visible
           try { map.moveLayer("boundaries-layer-fill"); } catch (_) {}
         }
       } catch (e) {
