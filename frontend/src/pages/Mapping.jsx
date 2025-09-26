@@ -23,7 +23,7 @@ export default function Mapping() {
     },
     {
       id: "boundaries-layer",
-      label: "Boundaries",
+      label: "State Boundaries",
       // These suffixes correspond to how addArcGISFeatureLayer names sublayers
       sublayers: ["-fill", "-outline", "-line", "-circle"],
     },
@@ -31,6 +31,34 @@ export default function Mapping() {
 
   // Track which groups are visible
   const [visibleGroups, setVisibleGroups] = useState(() => new Set());
+
+  // Water body state selection (only used when Water Bodies group is visible)
+  const [selectedWaterState, setSelectedWaterState] = useState("");
+  const waterBodySources = {
+    Tripura: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/Tripura_water_bodies/FeatureServer/0",
+    "Madhya Pradesh": "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/Madhya_pradesh_water_bodies/FeatureServer/0",
+    // Add two more states here when their FeatureServer URLs are available
+  };
+
+  // Helper to remove Water Bodies layers/sources
+  const removeWaterBodiesLayer = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const baseId = "arcgis-features";
+    const sub = ["-fill", "-outline", "-line", "-circle"];
+    sub.forEach((s) => {
+      const id = `${baseId}${s}`;
+      if (map.getLayer(id)) {
+        try { map.removeLayer(id); } catch (_) {}
+      }
+    });
+    if (map.getLayer(baseId)) {
+      try { map.removeLayer(baseId); } catch (_) {}
+    }
+    if (map.getSource(baseId)) {
+      try { map.removeSource(baseId); } catch (_) {}
+    }
+  };
 
   // Base map styles
   const styles = [
@@ -92,21 +120,6 @@ export default function Mapping() {
       // Ensure proper sizing when the container becomes full-bleed
       map.resize();
       try {
-        // Load Water Bodies layer
-        await addArcGISFeatureLayer(map, {
-          id: "arcgis-features",
-          featureServerUrl: "https://livingatlas.esri.in/server1/rest/services/Water/Surface_Water_Bodies/MapServer/0",
-        });
-        // Darken water bodies style
-        if (map.getLayer("arcgis-features-fill")) {
-          map.setPaintProperty("arcgis-features-fill", "fill-color", "#0000FF");
-          map.setPaintProperty("arcgis-features-fill", "fill-opacity", 0.4);
-        }
-        if (map.getLayer("arcgis-features-outline")) {
-          map.setPaintProperty("arcgis-features-outline", "line-color", "#0000FF");
-          map.setPaintProperty("arcgis-features-outline", "line-width", 1.5);
-        }
-
         // Load District Boundaries layer
         await addArcGISFeatureLayer(map, {
           id: "district-boundaries",
@@ -121,7 +134,7 @@ export default function Mapping() {
           try { map.moveLayer("district-boundaries-fill"); } catch (_) {}
         }
 
-        // Load original Boundaries layer
+        // Load State Boundaries layer
         await addArcGISFeatureLayer(map, {
           id: "boundaries-layer",
           featureServerUrl: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/WFSServer/FeatureServer/0",
@@ -167,20 +180,7 @@ export default function Mapping() {
     // After style loads, re-add sources/layers and apply visibility
     const onStyleLoad = async () => {
       try {
-        // Re-add Water Bodies layer
-        await addArcGISFeatureLayer(map, {
-          id: "arcgis-features",
-          featureServerUrl: "https://livingatlas.esri.in/server1/rest/services/Water/Surface_Water_Bodies/MapServer/0",
-        });
-        // Apply water bodies style after style reload
-        if (map.getLayer("arcgis-features-fill")) {
-          map.setPaintProperty("arcgis-features-fill", "fill-color", "#0000FF");
-          map.setPaintProperty("arcgis-features-fill", "fill-opacity", 0.4);
-        }
-        if (map.getLayer("arcgis-features-outline")) {
-          map.setPaintProperty("arcgis-features-outline", "line-color", "#0000FF");
-          map.setPaintProperty("arcgis-features-outline", "line-width", 1.5);
-        }
+        // Do not automatically add Water Bodies on style change; handled by selection effect below
         
         // Re-add District Boundaries layer
         await addArcGISFeatureLayer(map, {
@@ -205,6 +205,22 @@ export default function Mapping() {
           map.setPaintProperty("boundaries-layer-fill", "fill-outline-color", "#000000");
           try { map.moveLayer("boundaries-layer-fill"); } catch (_) {}
         }
+        // If Water Bodies group is visible and a state is chosen, re-add it after style change
+        if (visibleGroups.has("arcgis-features") && selectedWaterState && waterBodySources[selectedWaterState]) {
+          await addArcGISFeatureLayer(map, {
+            id: "arcgis-features",
+            featureServerUrl: waterBodySources[selectedWaterState],
+            fit: false,
+          });
+          if (map.getLayer("arcgis-features-fill")) {
+            map.setPaintProperty("arcgis-features-fill", "fill-color", "#0000FF");
+            map.setPaintProperty("arcgis-features-fill", "fill-opacity", 0.4);
+          }
+          if (map.getLayer("arcgis-features-outline")) {
+            map.setPaintProperty("arcgis-features-outline", "line-color", "#0000FF");
+            map.setPaintProperty("arcgis-features-outline", "line-width", 1.5);
+          }
+        }
       } catch (e) {
         console.error(e);
       }
@@ -222,6 +238,46 @@ export default function Mapping() {
     applyVisibility();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleGroups]);
+
+  // Load or remove Water Bodies based on visibility + selected state
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const visible = visibleGroups.has("arcgis-features");
+    if (!visible) {
+      // If group hidden, remove layer to avoid stale data
+      removeWaterBodiesLayer();
+      return;
+    }
+    // Visible but no state chosen -> ensure removed
+    if (!selectedWaterState || !waterBodySources[selectedWaterState]) {
+      removeWaterBodiesLayer();
+      return;
+    }
+    // Visible + state chosen -> load
+    (async () => {
+      try {
+        // Replace any previous
+        removeWaterBodiesLayer();
+        await addArcGISFeatureLayer(map, {
+          id: "arcgis-features",
+          featureServerUrl: waterBodySources[selectedWaterState],
+          fit: true,
+        });
+        if (map.getLayer("arcgis-features-fill")) {
+          map.setPaintProperty("arcgis-features-fill", "fill-color", "#0000FF");
+          map.setPaintProperty("arcgis-features-fill", "fill-opacity", 0.4);
+        }
+        if (map.getLayer("arcgis-features-outline")) {
+          map.setPaintProperty("arcgis-features-outline", "line-color", "#0000FF");
+          map.setPaintProperty("arcgis-features-outline", "line-width", 1.5);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleGroups, selectedWaterState]);
 
   return (
     <div className="relative h-full">
@@ -290,6 +346,24 @@ export default function Mapping() {
               </label>
             ))}
           </div>
+          {/* Conditional Water Bodies state dropdown */}
+          {visibleGroups.has("arcgis-features") && (
+            <div className="mt-3">
+              <label className="block text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-1">
+                Water Body State
+              </label>
+              <select
+                className="w-full text-sm px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/90"
+                value={selectedWaterState}
+                onChange={(e) => setSelectedWaterState(e.target.value)}
+              >
+                <option value="">Select a state</option>
+                {Object.keys(waterBodySources).map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
     </div>
