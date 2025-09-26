@@ -1,13 +1,27 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 export default function OCR() {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
+  const [apiStatus, setApiStatus] = useState({ ok: null, message: "" });
   const inputRef = useRef(null);
-
   const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${baseUrl}/api/health`);
+        const ok = r.ok;
+        if (!cancelled) setApiStatus({ ok, message: ok ? "API connected" : `Health error: ${r.status}` });
+      } catch (e) {
+        if (!cancelled) setApiStatus({ ok: false, message: e?.message || "Failed to reach API" });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [baseUrl]);
 
   function onFileChange(e) {
     setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
@@ -43,18 +57,28 @@ export default function OCR() {
       const data = await resp.json();
       setResults(data);
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || String(err));
     } finally {
       setLoading(false);
     }
   }
-
   return (
     <div className="w-full">
       <h1 className="text-xl font-semibold text-gray-800 mb-2">OCR Upload</h1>
       <p className="text-sm text-gray-600 mb-5">
         Upload one or more images. We’ll extract structured data using Gemini and geocode locations for mapping.
       </p>
+
+      {apiStatus.ok === false && (
+        <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+          API unreachable at {baseUrl}. {apiStatus.message}
+        </div>
+      )}
+      {apiStatus.ok === true && (
+        <div className="mb-4 text-xs text-green-700 bg-green-50 border border-green-200 rounded p-2">
+          {apiStatus.message}
+        </div>
+      )}
 
       <form onSubmit={onSubmit} className="space-y-5">
         {/* Prominent Dropzone */}

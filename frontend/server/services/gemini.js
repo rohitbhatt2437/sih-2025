@@ -9,8 +9,8 @@ function buildPrompt() {
 export async function extractFromImages(images) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY not set');
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: MODEL });
+  const genAI = new GoogleGenerativeAI(apiKey, { apiVersion: 'v1' });
+  let model = genAI.getGenerativeModel({ model: MODEL });
 
   const prompt = buildPrompt();
 
@@ -26,9 +26,26 @@ export async function extractFromImages(images) {
           },
         },
       ];
-      const resp = await model.generateContent({ contents: [{ role: 'user', parts }] });
+      let resp;
+      try {
+        resp = await model.generateContent({ contents: [{ role: 'user', parts }] });
+      } catch (e) {
+        const msg = String(e?.message || e || '');
+        // Automatic fallback if model is unavailable or not accessible.
+        if (/not found|does not have access|404/i.test(msg) && MODEL !== 'gemini-1.5-flash-8b') {
+          const fallback = 'gemini-1.5-flash-8b';
+          try {
+            model = genAI.getGenerativeModel({ model: fallback });
+            resp = await model.generateContent({ contents: [{ role: 'user', parts }] });
+          } catch (fallbackErr) {
+            throw fallbackErr;
+          }
+        } else {
+          throw e;
+        }
+      }
       const text = resp.response.text();
-      // Strip code fences if any
+      // Strip codeFences if any
       const jsonText = text.replace(/^```(json)?/i, '').replace(/```$/i, '').trim();
       const parsed = JSON.parse(jsonText);
       results.push({ ok: true, data: parsed });
