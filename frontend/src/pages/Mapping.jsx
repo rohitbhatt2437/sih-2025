@@ -3,10 +3,143 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { addArcGISFeatureLayer } from "../utils/mapLayers";
 
+// ArcGIS Service URLs
+const STATE_SERVICE = 'https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/state_boundary/FeatureServer/0';
+const DISTRICT_SERVICE = 'https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/district_boundary/FeatureServer/0';
+
+// State codes mapping
+const STATE_CODE = {
+  'Odisha': 'OD',
+  'Madhya Pradesh': 'MP',
+  'Tripura': 'TR',
+  'Telangana': 'TG'
+};
+
 export default function Mapping() {
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
   const [error, setError] = useState(null);
+  const [selectedState, setSelectedState] = useState("");
+  const [selectedDistrict, setSelectedDistrict] = useState("");
+  const [selectedVillage, setSelectedVillage] = useState("");
+  const [districts, setDistricts] = useState([]);
+  
+  // Helper function to remove layer and source
+  const removeLayerAndSource = (id) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource(id)) map.removeSource(id);
+  };
+
+  // Function to highlight state boundary
+  const showStateBoundary = async (stateName) => {
+    console.log('Showing state boundary for:', stateName);
+    const map = mapRef.current;
+    if (!map) {
+      console.error('Map not initialized');
+      return;
+    }
+
+    const stateCode = STATE_CODE[stateName];
+    if (!stateCode) {
+      console.error('Invalid state name:', stateName);
+      return;
+    }
+
+    const whereByCode = `State_Name='${stateCode}'`;
+    const whereByName = `State_FSI='${stateName.replace(/'/g, "''")}'`;
+    const urlByCode = `${STATE_SERVICE}/query?where=${encodeURIComponent(whereByCode)}&outFields=*&f=geojson`;
+    const urlByName = `${STATE_SERVICE}/query?where=${encodeURIComponent(whereByName)}&outFields=*&f=geojson`;
+
+    try {
+      let response = await fetch(urlByCode);
+      let data = await response.json();
+      
+      if (!data || !data.features || data.features.length === 0) {
+        response = await fetch(urlByName);
+        data = await response.json();
+      }
+
+      if (!data || !data.features || data.features.length === 0) {
+        throw new Error('No state features found');
+      }
+
+      removeLayerAndSource('state-boundary-highlight');
+      map.addSource('state-boundary-highlight', { type: 'geojson', data });
+      map.addLayer({
+        id: 'state-boundary-highlight',
+        type: 'line',
+        source: 'state-boundary-highlight',
+        paint: {
+          'line-color': '#0000ff',
+          'line-width': 3
+        }
+      });
+
+      // Fit to state bounds
+      const bounds = data.features[0].geometry.coordinates[0].reduce((bounds, coord) => {
+        return [
+          [Math.min(bounds[0][0], coord[0]), Math.min(bounds[0][1], coord[1])],
+          [Math.max(bounds[1][0], coord[0]), Math.max(bounds[1][1], coord[1])]
+        ];
+      }, [[180, 90], [-180, -90]]);
+
+      map.fitBounds(bounds, { padding: 50, duration: 1000 });
+    } catch (error) {
+      console.error('Error highlighting state:', error);
+    }
+  };
+
+  // Function to highlight district boundary
+  const showDistrictBoundary = async (stateName, districtName) => {
+    console.log('Showing district boundary for:', districtName, 'in state:', stateName);
+    const map = mapRef.current;
+    if (!map) {
+      console.error('Map not initialized');
+      return;
+    }
+
+    const stateCode = STATE_CODE[stateName];
+    if (!stateCode) {
+      console.error('Invalid state name:', stateName);
+      return;
+    }
+
+    let where = `state='${stateCode}'`;
+    if (districtName) where += ` AND district='${districtName}'`;
+
+    try {
+      const response = await fetch(`${DISTRICT_SERVICE}/query?where=${encodeURIComponent(where)}&outFields=*&f=geojson`);
+      const data = await response.json();
+
+      removeLayerAndSource('district-boundary-highlight');
+      map.addSource('district-boundary-highlight', { type: 'geojson', data });
+      map.addLayer({
+        id: 'district-boundary-highlight',
+        type: 'line',
+        source: 'district-boundary-highlight',
+        paint: {
+          'line-color': '#ffa500',
+          'line-width': 2
+        }
+      });
+
+      if (districtName) {
+        // Fit to district bounds if a specific district is selected
+        const bounds = data.features[0].geometry.coordinates[0].reduce((bounds, coord) => {
+          return [
+            [Math.min(bounds[0][0], coord[0]), Math.min(bounds[0][1], coord[1])],
+            [Math.max(bounds[1][0], coord[0]), Math.max(bounds[1][1], coord[1])]
+          ];
+        }, [[180, 90], [-180, -90]]);
+
+        map.fitBounds(bounds, { padding: 50, duration: 1000 });
+      }
+    } catch (error) {
+      console.error('Error highlighting district:', error);
+    }
+  };
   // Registry of layer groups to control (add new entries here as you add layers)
   const layerGroups = [
     {
@@ -326,6 +459,51 @@ export default function Mapping() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleGroups]);
 
+  // Fetch districts when state is selected
+  useEffect(() => {
+    if (!selectedState) {
+      setDistricts([]);
+      removeLayerAndSource('state-boundary-highlight');
+      removeLayerAndSource('district-boundary-highlight');
+      return;
+    }
+
+    console.log('Fetching districts for state:', selectedState);
+    const stateCode = STATE_CODE[selectedState];
+    const where = `state='${stateCode}'`;
+    const url = `${DISTRICT_SERVICE}/query?where=${encodeURIComponent(where)}&outFields=district&returnDistinctValues=true&returnGeometry=false&f=json`;
+
+    fetch(url)
+      .then(res => res.json())
+      .then(json => {
+        console.log('Districts response:', json);
+        const districtList = (json.features || [])
+          .map(f => (f.attributes && (f.attributes.district || f.attributes.District)))
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+        console.log('Processed district list:', districtList);
+        setDistricts(districtList);
+      })
+      .catch(err => {
+        console.error('Failed to load districts:', err);
+        setDistricts([]);
+      });
+
+    // Highlight state boundary when state is selected
+    showStateBoundary(selectedState);
+  }, [selectedState]);
+
+  // Handle district selection changes
+  useEffect(() => {
+    if (!selectedState || !selectedDistrict) {
+      removeLayerAndSource('district-boundary-highlight');
+      return;
+    }
+
+    console.log('Highlighting district:', selectedDistrict, 'in state:', selectedState);
+    showDistrictBoundary(selectedState, selectedDistrict);
+  }, [selectedState, selectedDistrict]);
+
   // Load or remove Water Bodies based on visibility + selected state
   useEffect(() => {
     const map = mapRef.current;
@@ -406,7 +584,7 @@ export default function Mapping() {
 
       {/* Top-right Base Map Style Selector */}
       <div className="absolute right-3 top-3 z-10">
-        <div className="bg-white/90 backdrop-blur rounded-lg shadow border border-gray-200 px-3 py-2">
+        <div className="bg-white/90 hover:bg-white/80 active:bg-white/70 transition-all duration-200 backdrop-blur rounded-lg shadow border border-gray-200 px-3 py-2">
           <label className="block text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-1">
             Base Map
           </label>
@@ -427,38 +605,98 @@ export default function Mapping() {
         </div>
       </div>
 
-      {/* Bottom-left layer toggles (positioned above ScaleControl to avoid overlap) */}
-      <div className="absolute left-3 bottom-16 z-10">
-        <div className="bg-white/90 backdrop-blur rounded-lg shadow border border-gray-200 px-3 py-2 min-w-[160px]">
-          <div className="text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-1">
-            Layers
+      {/* Left-top controls */}
+      <div className="absolute left-3 top-16 z-10">
+        <div className="flex flex-col gap-2">
+          {/* Layers section - horizontal */}
+          <div className="bg-white/60 hover:bg-white/90 transition-all duration-300 backdrop-blur rounded-lg shadow border border-gray-200 px-2 py-2">
+            <div className="text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-2">
+              Layers
+            </div>
+            <div className="flex flex-row gap-4">
+              {layerGroups.map((g) => (
+                <label
+                  key={g.id}
+                  className="flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer whitespace-nowrap"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500"
+                    checked={visibleGroups.has(g.id)}
+                    onChange={(e) =>
+                      setVisibleGroups((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(g.id);
+                        else next.delete(g.id);
+                        return next;
+                      })
+                    }
+                  />
+                  <span>{g.label}</span>
+                </label>
+              ))}
+            </div>
           </div>
-          <div className="space-y-1">
-            {layerGroups.map((g) => (
-              <label
-                key={g.id}
-                className="flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500"
-                  checked={visibleGroups.has(g.id)}
-                  onChange={(e) =>
-                    setVisibleGroups((prev) => {
-                      const next = new Set(prev);
-                      if (e.target.checked) next.add(g.id);
-                      else next.delete(g.id);
-                      return next;
-                    })
+
+          {/* Search section */}
+          <div className="bg-white/60 hover:bg-white/90 transition-all duration-300 backdrop-blur rounded-lg shadow border border-gray-200 px-2 py-2">
+            <div className="text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-2">
+              Search Location
+            </div>
+            <div className="flex flex-row gap-2">
+              <select
+                className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/75 hover:bg-white/90 transition-colors duration-200 min-w-[100px]"
+                value={selectedState}
+                onChange={(e) => {
+                  console.log('State selected:', e.target.value);
+                  const newState = e.target.value;
+                  setSelectedState(newState);
+                  setSelectedDistrict("");
+                  setSelectedVillage("");
+                  removeLayerAndSource('district-boundary-highlight');
+                  if (!newState) {
+                    removeLayerAndSource('state-boundary-highlight');
                   }
-                />
-                <span>{g.label}</span>
-              </label>
-            ))}
+                }}
+              >
+                <option value="">Select State</option>
+                {Object.keys(STATE_CODE).map(state => (
+                  <option key={state} value={state}>{state}</option>
+                ))}
+              </select>
+
+              <select
+                className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/75 hover:bg-white/90 transition-colors duration-200 min-w-[100px]"
+                value={selectedDistrict}
+                onChange={(e) => {
+                  console.log('District selected:', e.target.value);
+                  const newDistrict = e.target.value;
+                  setSelectedDistrict(newDistrict);
+                  setSelectedVillage("");
+                }}
+                disabled={!selectedState}
+              >
+                <option value="">Select District</option>
+                {districts.map(district => (
+                  <option key={district} value={district}>{district}</option>
+                ))}
+              </select>
+
+              <select
+                className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/75 hover:bg-white/90 transition-colors duration-200 min-w-[100px]"
+                value={selectedVillage}
+                onChange={(e) => setSelectedVillage(e.target.value)}
+                disabled={!selectedDistrict}
+              >
+                <option value="">Select Village</option>
+                {/* Village options will be added when you provide the logic */}
+              </select>
+            </div>
           </div>
+
           {/* Conditional Water Bodies state dropdown */}
           {visibleGroups.has("arcgis-features") && (
-            <div className="mt-3">
+            <div className="bg-white/60 hover:bg-white/90 transition-all duration-300 backdrop-blur rounded-lg shadow border border-gray-200 px-2 py-2 mt-2">
               <label className="block text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-1">
                 Water Body State
               </label>

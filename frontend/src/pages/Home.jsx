@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import OverviewBarChart from "../components/OverviewBarChart";
 import { addArcGISFeatureLayer } from "../utils/mapLayers";
+import ForestRightsCharts from "../components/ForestRightsCharts";
 
 export default function Home() {
   // --- UI State for filters ---
@@ -294,16 +294,40 @@ export default function Home() {
     return "No selection";
   }, [stateSel, districtSel]);
 
-  const chartData = [
-    { label: "Fenced Bodies", value: 80 },
-    { label: "Initiatives", value: 60 },
-    { label: "Disease Outbreak", value: 30 },
-    { label: "Oxygen Levels", value: 70 },
-    { label: "Cleaning Activities", value: 50 },
-    { label: "Water Bodies Monitored", value: 90 },
-  ];
+  // Generate random data for charts based on state/district selection
+  const chartData = useMemo(() => {
+    // Random number generator with min-max range
+    const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    
+    // Generate base numbers
+    const ifrClaims = rand(600000, 900000);
+    const ifrTitles = rand(200000, ifrClaims);
+    const cfrClaims = rand(35000, 57000);
+    const cfrTitles = rand(9000, cfrClaims);
+    const totalClaims = ifrClaims + cfrClaims;
+    
+    return {
+      state: stateSel || 'All India',
+      // Individual Forest Rights
+      ifrClaimsReceived: ifrClaims,
+      ifrTitlesDistributed: ifrTitles,
+      
+      // Community Forest Rights
+      cfrClaimsReceived: cfrClaims,
+      cfrTitlesDistributed: cfrTitles,
+      
+      // Forest Land (in Lakh Acres)
+      ifrForestLand: rand(6, 15),
+      cfrForestLand: rand(70, 100),
+      
+      // Claims Status
+      totalTitlesDistributed: ifrTitles + cfrTitles,
+      pendingClaims: rand(700000, 800000),
+      rejectedClaims: rand(1800000, 2000000),
+    };
+  }, [stateSel, districtSel]); // Regenerate when selection changes
 
-  const maxValue = 100; // for simple 0-100 visualization
+
 
   // Initialize base map on left panel
   useEffect(() => {
@@ -347,67 +371,115 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    <div className="min-h-screen bg-gray-50 p-6">
+      {/* Header Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <h3 className="text-red-600 text-sm font-semibold mb-1">All India - Claims Received</h3>
+          <div className="flex justify-between items-end">
+            <div>
+              <p className="text-2xl font-bold text-gray-900">5,123K</p>
+              <p className="text-sm text-gray-600">Community (claims)</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">4,911,495</p>
+              <p className="text-sm text-gray-600">IFR</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <h3 className="text-green-600 text-sm font-semibold mb-1">All India - Total Titles Distributed</h3>
+          <div className="flex justify-between items-end">
+            <div>
+              <p className="text-2xl font-bold text-gray-900">2,511K</p>
+              <p className="text-sm text-gray-600">CFR</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">2,389,670</p>
+              <p className="text-sm text-gray-600">IFR</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <h3 className="text-blue-600 text-sm font-semibold mb-1">All India - Extent of Forest Land Recognised</h3>
+          <div className="flex justify-between items-end">
+            <div>
+              <p className="text-2xl font-bold text-gray-900">232.74</p>
+              <p className="text-sm text-gray-600">Lakh Acres</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Base Map card */}
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="px-3 py-2 border-b text-sm font-medium text-gray-800">FRA Titles Distributed</div>
-            <div ref={mapContainer} className="h-[420px] w-full" />
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-900">FRA Implementation Map</h3>
+            </div>
+            <div className="p-2">
+              <div ref={mapContainer} className="h-[580px] w-full rounded-lg overflow-hidden" />
+            </div>
           </div>
         </div>
 
         {/* Right: Filters and charts */}
-        <div className="lg:col-span-3 flex flex-col gap-4">
+        <div className="lg:col-span-2 flex flex-col gap-6">
           {/* Header row: Title and selectors */}
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">FRA</h2>
-            <div className="flex flex-col sm:flex-row gap-3">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <h2 className="text-xl font-semibold text-gray-900">Forest Rights Act Analytics</h2>
+              <div className="flex flex-col sm:flex-row gap-4">
           {/* State selector */}
-          <div>
-            <label className="block text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-1">State</label>
-            <select
-              className="min-w-[200px] text-sm px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-              value={stateSel}
-              onChange={(e) => setStateSel(e.target.value)}
-            >
-              <option value="">All</option>
-              {allowedStates.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          {/* District selector */}
-          <div>
-            <label className="block text-[11px] uppercase tracking-wide text-gray-600 font-semibold mb-1">District</label>
-            <select
-              className="min-w-[220px] text-sm px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-              value={districtSel}
-              onChange={(e) => setDistrictSel(e.target.value)}
-              disabled={!stateSel || loadingLists}
-            >
-              <option value="">All</option>
-              {districtOptions.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                  <select
+                    className="w-full min-w-[200px] text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
+                    value={stateSel}
+                    onChange={(e) => setStateSel(e.target.value)}
+                  >
+                    <option value="">All States</option>
+                    {allowedStates.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* District selector */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">District</label>
+                  <select
+                    className="w-full min-w-[220px] text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm disabled:bg-gray-100 disabled:text-gray-500"
+                    value={districtSel}
+                    onChange={(e) => setDistrictSel(e.target.value)}
+                    disabled={!stateSel || loadingLists}
+                  >
+                    <option value="">All Districts</option>
+                    {districtOptions.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Selection summary */}
+            <div className="mt-2">
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="font-medium">Current Selection:</span>
+                <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-md">
+                  {selectionSummary}
+                  {loadingLists && <span className="ml-2 text-blue-500">(loading...)</span>}
+                </span>
+                {error && <span className="text-red-600 ml-2">{error}</span>}
+              </div>
             </div>
           </div>
 
-      {/* Selection summary */}
-      <div className="text-sm text-gray-700">
-        <span className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5">
-          <span className="font-medium">Selection:</span> {selectionSummary}
-          {loadingLists && <span className="text-gray-500">(loading...)</span>}
-          {error && <span className="text-red-600">{error}</span>}
-        </span>
-      </div>
-
-      {/* District chip list removed as requested: use dropdown only */}
-      <div>
-        <OverviewBarChart title="Overview" data={chartData} maxValue={maxValue} />
-      </div>
+          {/* Forest Rights Charts */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+            <ForestRightsCharts stateData={chartData} />
+          </div>
         </div>
       </div>
     </div>
