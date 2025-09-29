@@ -14,10 +14,13 @@ export default function Home() {
   const [districtOptions, setDistrictOptions] = useState([]); // all districts for allowed states (or for selected state)
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
+  const [villages, setVillages] = useState([]);
+  const [villageSel, setVillageSel] = useState("");
 
   // Use the specific State and District services from your provided snippet
   const STATES_FS = "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/state_boundary/FeatureServer/0";
   const DISTRICTS_FS = "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/district_boundary/FeatureServer/0";
+  const VILLAGE_SERVICE = 'https://livingatlas.esri.in/server/rest/services/IAB2024/IAB_Village_2024/MapServer/0';
 
   // ArcGIS services
   // Note: also declared above for map overlay use
@@ -67,6 +70,18 @@ export default function Home() {
     if (!resp.ok) throw new Error(`ArcGIS query failed: ${resp.status}`);
     const json = await resp.json();
     return json.features?.map((f) => f.attributes || {}) || [];
+  }
+
+  // Helper to remove a single layer and its source
+  function removeLayerAndSource(id) {
+    const map = mapRef.current;
+    if (!map) return;
+    if (map.getLayer(id)) {
+      try { map.removeLayer(id); } catch (_) {}
+    }
+    if (map.getSource(id)) {
+      try { map.removeSource(id); } catch (_) {}
+    }
   }
 
   // WHERE builders
@@ -159,6 +174,10 @@ export default function Home() {
     }
     // Reset district selection when state changes and load
     setDistrictSel("");
+    setVillageSel("");
+    // remove village overlay on state change
+    removeLayerAndSource('home-village-boundary-fill');
+    removeLayerAndSource('home-village-boundary-outline');
     loadDistrictsForState(stateSel);
     return () => { cancelled = true; };
   }, [stateSel]);
@@ -285,6 +304,109 @@ export default function Home() {
       try { detachAll.forEach((fn) => fn && fn()); } catch(_) {}
     };
   }, [stateSel, districtSel]);
+
+  // Load villages when district changes
+  useEffect(() => {
+    async function loadVillagesForDistrict(stateName, districtName) {
+      if (!stateName || !districtName) { setVillages([]); return; }
+      try {
+        const where = [
+          `UPPER(State)=UPPER('${String(stateName).replace(/'/g, "''")}')`,
+          `UPPER(District)=UPPER('${String(districtName).replace(/'/g, "''")}')`
+        ].join(' AND ');
+        const stats = JSON.stringify([
+          { statisticType: 'count', onStatisticField: 'Name', outStatisticFieldName: 'cnt' }
+        ]);
+        const pageSize = 2000;
+        let resultOffset = 0;
+        const names = new Set();
+        while (true) {
+          const params = new URLSearchParams({
+            where,
+            outFields: 'Name',
+            groupByFieldsForStatistics: 'Name',
+            outStatistics: stats,
+            orderByFields: 'Name',
+            returnGeometry: 'false',
+            f: 'json',
+            resultOffset: String(resultOffset),
+            resultRecordCount: String(pageSize)
+          });
+          const url = `${VILLAGE_SERVICE}/query?${params}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          if (!data || !Array.isArray(data.features)) break;
+          data.features.forEach(feat => {
+            const n = feat?.attributes?.Name || feat?.attributes?.name;
+            if (n && typeof n === 'string') names.add(n.trim());
+          });
+          if (data.exceededTransferLimit && data.features.length > 0) {
+            resultOffset += data.features.length;
+          } else {
+            break;
+          }
+        }
+        setVillages(Array.from(names).sort((a,b)=>a.localeCompare(b)));
+      } catch (e) {
+        console.error('Failed to load villages:', e);
+        setVillages([]);
+      }
+    }
+    setVillageSel("");
+    removeLayerAndSource('home-village-boundary-fill');
+    removeLayerAndSource('home-village-boundary-outline');
+    if (stateSel && districtSel) {
+      loadVillagesForDistrict(stateSel, districtSel);
+    } else {
+      setVillages([]);
+    }
+  }, [stateSel, districtSel]);
+
+  // Show village boundary when village changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    async function showVillageBoundary(stateName, districtName, villageName) {
+      removeLayerAndSource('home-village-boundary-fill');
+      removeLayerAndSource('home-village-boundary-outline');
+      if (!villageName) return;
+      try {
+        const parts = [
+          `State='${String(stateName).replace(/'/g, "''")}'`,
+          `District='${String(districtName).replace(/'/g, "''")}'`,
+          `Name='${String(villageName).replace(/'/g, "''")}'`
+        ];
+        const where = parts.join(' AND ');
+        const params = new URLSearchParams({ where, outFields: '*', f: 'geojson' });
+        const response = await fetch(`${VILLAGE_SERVICE}/query?${params}`);
+        const data = await response.json();
+        if (!data?.features?.length) return;
+        // Add fill source and layers
+        map.addSource('home-village-boundary', { type: 'geojson', data });
+        map.addLayer({
+          id: 'home-village-boundary-fill',
+          type: 'fill',
+          source: 'home-village-boundary',
+          paint: {
+            'fill-color': '#8B4513',
+            'fill-opacity': 0.35
+          }
+        });
+        map.addLayer({
+          id: 'home-village-boundary-outline',
+          type: 'line',
+          source: 'home-village-boundary',
+          paint: {
+            'line-color': '#8B4513',
+            'line-width': 2
+          }
+        });
+      } catch (e) {
+        console.error('Error showing village boundary:', e);
+      }
+    }
+    showVillageBoundary(stateSel, districtSel, villageSel);
+  }, [villageSel, stateSel, districtSel]);
 
   // Selection summary text
   const selectionSummary = useMemo(() => {
@@ -417,25 +539,11 @@ export default function Home() {
           <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">FRA Implementation Map</h3>
-            </div>
-            <div className="p-2">
-              <div ref={mapContainer} className="h-[580px] w-full rounded-lg overflow-hidden" />
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Filters and charts */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          {/* Header row: Title and selectors */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <h2 className="text-xl font-semibold text-gray-900">Forest Rights Act Analytics</h2>
-              <div className="flex flex-col sm:flex-row gap-4">
-          {/* State selector */}
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
                   <select
-                    className="w-full min-w-[200px] text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
+                    className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
                     value={stateSel}
                     onChange={(e) => setStateSel(e.target.value)}
                   >
@@ -445,11 +553,10 @@ export default function Home() {
                     ))}
                   </select>
                 </div>
-                {/* District selector */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">District</label>
                   <select
-                    className="w-full min-w-[220px] text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm disabled:bg-gray-100 disabled:text-gray-500"
+                    className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm disabled:bg-gray-100 disabled:text-gray-500"
                     value={districtSel}
                     onChange={(e) => setDistrictSel(e.target.value)}
                     disabled={!stateSel || loadingLists}
@@ -460,7 +567,34 @@ export default function Home() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Village</label>
+                  <select
+                    className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm disabled:bg-gray-100 disabled:text-gray-500"
+                    value={villageSel}
+                    onChange={(e) => setVillageSel(e.target.value)}
+                    disabled={!districtSel || villages.length === 0}
+                  >
+                    <option value="">All Villages</option>
+                    {villages.map((v) => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
+            </div>
+            <div className="p-2">
+              <div ref={mapContainer} className="h-[710px] w-full rounded-lg overflow-hidden" />
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Filters and charts */}
+        <div className="lg:col-span-2 flex flex-col gap-6">
+          {/* Header row: Title and selectors */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <h2 className="text-xl font-semibold text-gray-900">Forest Rights Act Analytics</h2>
             </div>
 
             {/* Selection summary */}
