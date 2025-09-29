@@ -170,17 +170,16 @@ export default function Mapping() {
       // Build the where clause based on hierarchy
       const parts = [`state='${stateCode}'`];
       if (districtName) {
-        parts.push(`district='${districtName}'`);
+        parts.push(`UPPER(district)=UPPER('${String(districtName).replace(/'/g, "''")}')`);
       }
       if (villageName) {
-        parts.push(`village='${villageName}'`);
+        parts.push(`UPPER(village)=UPPER('${String(villageName).replace(/'/g, "''")}')`);
       }
       const where = parts.join(' AND ');
 
-      // Remove existing layers first
-      removeLayerAndSource('arcgis-features');
+      // Remove existing layers first (ensure sublayers removed before source)
+      removeWaterBodiesLayer();
 
-      // Fetch water bodies
       const params = new URLSearchParams({
         where,
         outFields: '*',
