@@ -5,6 +5,37 @@ import { addArcGISFeatureLayer } from "../utils/mapLayers";
 import ForestRightsCharts from "../components/ForestRightsCharts";
 
 export default function Home() {
+  // --- Static dataset provided by user ---
+  const STATE_STATS = [
+    {
+      stateName: "Madhya Pradesh",
+      claimsReceived: { individual: 585326, community: 42187, total: 627513 },
+      titlesDistributed: { individual: 266901, community: 27976, total: 294877 },
+      landRecognisedAcres: { individual: 788651.25, community: 1463614.46, total: 2252265.71 },
+      claimsStatus: { disposed: 617284, rejected: 322407 }
+    },
+    {
+      stateName: "Odisha",
+      claimsReceived: { individual: 732530, community: 35843, total: 768373 },
+      titlesDistributed: { individual: 463129, community: 8990, total: 472119 },
+      landRecognisedAcres: { individual: 676078.86, community: 763729, total: 1439807.86 },
+      claimsStatus: { disposed: 618459, rejected: 146340 }
+    },
+    {
+      stateName: "Telangana",
+      claimsReceived: { individual: 651822, community: 3427, total: 655249 },
+      titlesDistributed: { individual: 230735, community: 721, total: 231456 },
+      landRecognisedAcres: { individual: 669689.14, community: 457663.17, total: 1127352.32 },
+      claimsStatus: { disposed: 325882, rejected: 94426 }
+    },
+    {
+      stateName: "Tripura",
+      claimsReceived: { individual: 200557, community: 164, total: 200721 },
+      titlesDistributed: { individual: 127931, community: 101, total: 128032 },
+      landRecognisedAcres: { individual: 465192.88, community: 552.4, total: 465745.28 },
+      claimsStatus: { disposed: 196880, rejected: 68848 }
+    }
+  ];
   // --- UI State for filters ---
   const allowedStates = ["Odisha", "Tripura", "Telangana", "Madhya Pradesh"]; // labels in UI
   const [stateSel, setStateSel] = useState(""); // "" means none
@@ -75,13 +106,31 @@ export default function Home() {
   // Helper to remove a single layer and its source
   function removeLayerAndSource(id) {
     const map = mapRef.current;
-    if (!map) return;
-    if (map.getLayer(id)) {
-      try { map.removeLayer(id); } catch (_) {}
-    }
-    if (map.getSource(id)) {
-      try { map.removeSource(id); } catch (_) {}
-    }
+    // Avoid calling Mapbox methods before style is loaded (prevents getOwnLayer error)
+    if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) return;
+    try {
+      if (map.getLayer(id)) {
+        map.removeLayer(id);
+      }
+    } catch (_) {}
+    try {
+      if (map.getSource(id)) {
+        map.removeSource(id);
+      }
+    } catch (_) {}
+  }
+
+  // Helper to remove the village boundary layers and their shared source
+  function removeVillageBoundary() {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) return;
+    const layers = ['home-village-boundary-fill', 'home-village-boundary-outline'];
+    layers.forEach((lid) => {
+      try { if (map.getLayer(lid)) map.removeLayer(lid); } catch (_) {}
+    });
+    try {
+      if (map.getSource('home-village-boundary')) map.removeSource('home-village-boundary');
+    } catch (_) {}
   }
 
   // WHERE builders
@@ -136,6 +185,56 @@ export default function Home() {
     return undefined;
   }
 
+  // --- Data utilities for stats rendering ---
+  const formatNumber = (n) =>
+    typeof n === 'number' ? n.toLocaleString('en-IN') : "";
+
+  function aggregateAll() {
+    return STATE_STATS.reduce((acc, s) => {
+      acc.claimsReceived.individual += s.claimsReceived.individual;
+      acc.claimsReceived.community += s.claimsReceived.community;
+      acc.claimsReceived.total += s.claimsReceived.total;
+      acc.titlesDistributed.individual += s.titlesDistributed.individual;
+      acc.titlesDistributed.community += s.titlesDistributed.community;
+      acc.titlesDistributed.total += s.titlesDistributed.total;
+      acc.landRecognisedAcres.individual += s.landRecognisedAcres.individual;
+      acc.landRecognisedAcres.community += s.landRecognisedAcres.community;
+      acc.landRecognisedAcres.total += s.landRecognisedAcres.total;
+      acc.claimsStatus.disposed += s.claimsStatus.disposed;
+      acc.claimsStatus.rejected += s.claimsStatus.rejected;
+      return acc;
+    }, {
+      claimsReceived: { individual: 0, community: 0, total: 0 },
+      titlesDistributed: { individual: 0, community: 0, total: 0 },
+      landRecognisedAcres: { individual: 0, community: 0, total: 0 },
+      claimsStatus: { disposed: 0, rejected: 0 }
+    });
+  }
+
+  function getStateEntry(name) {
+    return STATE_STATS.find(s => s.stateName === name);
+  }
+
+  function computeChartState(selectedState) {
+    const entry = selectedState ? getStateEntry(selectedState) : null;
+    const agg = entry || aggregateAll();
+    const stateLabel = entry ? entry.stateName : 'All India';
+    const totalReceived = agg.claimsReceived.total;
+    const pending = Math.max(0, totalReceived - (agg.claimsStatus.disposed + agg.claimsStatus.rejected));
+    return {
+      state: stateLabel,
+      ifrClaimsReceived: agg.claimsReceived.individual,
+      ifrTitlesDistributed: agg.titlesDistributed.individual,
+      cfrClaimsReceived: agg.claimsReceived.community,
+      cfrTitlesDistributed: agg.titlesDistributed.community,
+      ifrForestLand: agg.landRecognisedAcres.individual,
+      cfrForestLand: agg.landRecognisedAcres.community,
+      totalTitlesDistributed: agg.titlesDistributed.total,
+      pendingClaims: pending,
+      rejectedClaims: agg.claimsStatus.rejected,
+    };
+  }
+
   // On first load, don't fetch all districts; district list depends on state
   useEffect(() => {
     setDistrictOptions([]);
@@ -176,8 +275,7 @@ export default function Home() {
     setDistrictSel("");
     setVillageSel("");
     // remove village overlay on state change
-    removeLayerAndSource('home-village-boundary-fill');
-    removeLayerAndSource('home-village-boundary-outline');
+    removeVillageBoundary();
     loadDistrictsForState(stateSel);
     return () => { cancelled = true; };
   }, [stateSel]);
@@ -353,8 +451,7 @@ export default function Home() {
       }
     }
     setVillageSel("");
-    removeLayerAndSource('home-village-boundary-fill');
-    removeLayerAndSource('home-village-boundary-outline');
+    removeVillageBoundary();
     if (stateSel && districtSel) {
       loadVillagesForDistrict(stateSel, districtSel);
     } else {
@@ -367,8 +464,7 @@ export default function Home() {
     const map = mapRef.current;
     if (!map) return;
     async function showVillageBoundary(stateName, districtName, villageName) {
-      removeLayerAndSource('home-village-boundary-fill');
-      removeLayerAndSource('home-village-boundary-outline');
+      removeVillageBoundary();
       if (!villageName) return;
       try {
         const parts = [
@@ -416,38 +512,14 @@ export default function Home() {
     return "No selection";
   }, [stateSel, districtSel]);
 
-  // Generate random data for charts based on state/district selection
-  const chartData = useMemo(() => {
-    // Random number generator with min-max range
-    const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-    
-    // Generate base numbers
-    const ifrClaims = rand(600000, 900000);
-    const ifrTitles = rand(200000, ifrClaims);
-    const cfrClaims = rand(35000, 57000);
-    const cfrTitles = rand(9000, cfrClaims);
-    const totalClaims = ifrClaims + cfrClaims;
-    
-    return {
-      state: stateSel || 'All India',
-      // Individual Forest Rights
-      ifrClaimsReceived: ifrClaims,
-      ifrTitlesDistributed: ifrTitles,
-      
-      // Community Forest Rights
-      cfrClaimsReceived: cfrClaims,
-      cfrTitlesDistributed: cfrTitles,
-      
-      // Forest Land (in Lakh Acres)
-      ifrForestLand: rand(6, 15),
-      cfrForestLand: rand(70, 100),
-      
-      // Claims Status
-      totalTitlesDistributed: ifrTitles + cfrTitles,
-      pendingClaims: rand(700000, 800000),
-      rejectedClaims: rand(1800000, 2000000),
-    };
-  }, [stateSel, districtSel]); // Regenerate when selection changes
+  // Build chart data from provided dataset; depends on state only
+  const chartData = useMemo(() => computeChartState(stateSel), [stateSel]);
+
+  // Current stats for header cards, depends on state only
+  const currentStats = useMemo(() => {
+    const entry = stateSel ? STATE_STATS.find(s => s.stateName === stateSel) : null;
+    return entry || aggregateAll();
+  }, [stateSel]);
 
 
 
@@ -493,40 +565,40 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      {/* Header Stats */}
+    <div className="min-h-screen bg-gray-50 w-full">
+      {/* Header Stats (dynamic by state) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <h3 className="text-red-600 text-sm font-semibold mb-1">All India - Claims Received</h3>
+          <h3 className="text-red-600 text-sm font-semibold mb-1">{(stateSel || 'All India')} - Claims Received</h3>
           <div className="flex justify-between items-end">
             <div>
-              <p className="text-2xl font-bold text-gray-900">5,123K</p>
+              <p className="text-2xl font-bold text-gray-900">{formatNumber(currentStats.claimsReceived.community)}</p>
               <p className="text-sm text-gray-600">Community (claims)</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">4,911,495</p>
+              <p className="text-2xl font-bold text-gray-900">{formatNumber(currentStats.claimsReceived.individual)}</p>
               <p className="text-sm text-gray-600">IFR</p>
             </div>
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <h3 className="text-green-600 text-sm font-semibold mb-1">All India - Total Titles Distributed</h3>
+          <h3 className="text-green-600 text-sm font-semibold mb-1">{(stateSel || 'All India')} - Total Titles Distributed</h3>
           <div className="flex justify-between items-end">
             <div>
-              <p className="text-2xl font-bold text-gray-900">2,511K</p>
+              <p className="text-2xl font-bold text-gray-900">{formatNumber(currentStats.titlesDistributed.community)}</p>
               <p className="text-sm text-gray-600">CFR</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">2,389,670</p>
+              <p className="text-2xl font-bold text-gray-900">{formatNumber(currentStats.titlesDistributed.individual)}</p>
               <p className="text-sm text-gray-600">IFR</p>
             </div>
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <h3 className="text-blue-600 text-sm font-semibold mb-1">All India - Extent of Forest Land Recognised</h3>
+          <h3 className="text-blue-600 text-sm font-semibold mb-1">{(stateSel || 'All India')} - Extent of Forest Land Recognised</h3>
           <div className="flex justify-between items-end">
             <div>
-              <p className="text-2xl font-bold text-gray-900">232.74</p>
+              <p className="text-2xl font-bold text-gray-900">{new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(currentStats.landRecognisedAcres.total / 100000)}</p>
               <p className="text-sm text-gray-600">Lakh Acres</p>
             </div>
           </div>

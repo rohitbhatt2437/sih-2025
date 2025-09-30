@@ -58,9 +58,9 @@ export default function Navbar() {
               )}
             </li>
             <li><Link to="/mapping" className={navItemClass}>Mapping</Link></li>
-            <li><Link to="/ocr" className={navItemClass}>OCR</Link></li>
-            <li><a href="#" className={navItemClass}>Sensor Data</a></li>
-            <li><a href="#" className={navItemClass}>Upload Recent Image</a></li>
+            <li><Link to="/ocr" className={navItemClass}>Scan documents</Link></li>
+            <li><a href="#" className={navItemClass}>Document Data</a></li>
+            <li><Link to="/datacollection" className={navItemClass}>Data Collection</Link></li>
             <li><a href="#" className={navItemClass}>Water Quality Map</a></li>
             <li><a href="#" className={navItemClass}>Vegetation Map</a></li>
           </ul>

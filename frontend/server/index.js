@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { connectDB } from './config/db.js';
 import ocrRouter from './routes/ocr.js';
 import aggregatesRouter from './routes/aggregates.js';
+import claimsRouter from './routes/claims.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,18 +25,16 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 // Routes
 app.use('/api/ocr', ocrRouter);
 app.use('/api/aggregates', aggregatesRouter);
+app.use('/api/claims', claimsRouter);
 
 // DB and start
 const PORT = process.env.PORT || 4000;
 await connectDB();
 
 // Startup diagnostics
-const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
-if (!hasGeminiKey) {
-  console.warn('[Startup] GEMINI_API_KEY is not set. /api/ocr will return errors until it is configured.');
+if (!process.env.VISION_API_KEY) {
+  console.warn('[Startup] VISION_API_KEY is not set. /api/ocr will return errors until it is configured.');
 }
-console.log(`[Startup] Gemini model: ${model}`);
 
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);

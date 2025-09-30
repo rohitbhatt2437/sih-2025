@@ -7,6 +7,7 @@ import Footer from './components/Footer'
 import Home from './pages/Home'
 import Mapping from './pages/Mapping'
 import OCR from './pages/OCR'
+import DataCollection from './pages/DataCollection'
 
 function App() {
   const location = useLocation();
@@ -30,6 +31,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/mapping" element={<Mapping />} />
             <Route path="/ocr" element={<OCR />} />
+            <Route path="/datacollection" element={<DataCollection />} />
           </Routes>
         </section>
       </main>
