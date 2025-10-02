@@ -9,6 +9,8 @@ const DISTRICT_SERVICE = 'https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/r
 const VILLAGE_SERVICE = 'https://livingatlas.esri.in/server/rest/services/IAB2024/IAB_Village_2024/MapServer/0';
 const MNREGA_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/MGNREGA/IN_DT_FRABeneficiaryDetail/MapServer/0';
 const FACILITIES_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/PMGSY/IN_PMGSY_RuralFacilities_2021/MapServer/0';
+const ROAD_SERVICE = 'https://livingatlas.esri.in/server/rest/services/Road_Network/Road_Centerline_Bharatmala/MapServer/0';
+const AQUIFER_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/Water/Major_Aquifers/MapServer/0';
 
 // Base64 icons for Facilities categories
 const ICON_AGRO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAaCAYAAAC+aNwHAAAACXBIWXMAAA7EAAAOxAGVKw4bAAABn0lEQVQ4jbWTsU7DMBRFb1L/RCvmUIkxDHwBU2FC4g/CxJSKtQ0jaiem9g9YCRMLKwMZQW3FCKnEyJ4YXacOaeq6VRFX8uCXvPPs964F/ijxL4B2CD8HfDhoQaKZO3gQEulkiGQjwOuin0v01EYWMVciyItv0WyAvhGwf4WWzDCCRGfteSV6XojObIjDFYDMVFWVfH4UqHWw5+P1I8Hd81ithXwvxGg2xEUJaBd3DnTy9dmoLEoI91/fczy9xToctEOM2RPBnWrYQgSYdHncqwJ0TqKvcFKtaJIhzpzxyhR4ZxOE8ZrSsgcAYt1ANqvaA63bx2g54GBeAlwg4Zw1gA3jnfUUmFy9v8qRqigUgN30QuUydXb+XE+oKdGuFOWJGjiVGT5tWWV1FB5YAkxvkHoh6BbzHH+l5r8CoJwGIplZAXMXqgiMgClP0UVEz68BxPUXKep/8LXxweiGVpRo/1sBVO4gciXuUYvBIGEKvg8QV8fK6oxtDdCjyoEXW3UrYFKYi3ZN11W3AlDIaseNAPrCydDcGUBf6Ge7E2Ab/QCO5aTjhmlSiAAAAABJRU5ErkJggg==';
@@ -32,9 +34,11 @@ export default function Mapping() {
   const [selectedDistrict, setSelectedDistrict] = useState("");
   const [selectedVillage, setSelectedVillage] = useState("");
   const [showDistricts, setShowDistricts] = useState(false);
+  const [showRoads, setShowRoads] = useState(false);
   const [showMNREGA, setShowMNREGA] = useState(false);
   const [showFacilities, setShowFacilities] = useState(false);
   const [showSentinel, setShowSentinel] = useState(false);
+  const [showAquifer, setShowAquifer] = useState(false);
   // MNREGA service schema cache
   const [mnregaFields, setMnregaFields] = useState(null);
   // State for districts and villages dropdowns
@@ -43,6 +47,8 @@ export default function Mapping() {
   const [clickedInfo, setClickedInfo] = useState(null);
   // Cache latest selected boundary geometry for Sentinel mask
   const sentinelMaskGeomRef = useRef(null);
+  // Single marker that follows user clicks
+  const clickMarkerRef = useRef(null);
   
   // Helper function to remove layer and source
   const removeLayerAndSource = (id) => {
@@ -51,6 +57,61 @@ export default function Mapping() {
     if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(id)) map.removeSource(id);
   };
+
+  // Roads category styling: attempt to read a category/type attribute and color by value
+  const ROAD_CATEGORY_FIELDS = [
+    'Category', 'CATEGORY', 'Type', 'TYPE', 'Road_Type', 'RoadType', 'ROAD_TYPE',
+    'RoadClass', 'ROADCLASS', 'Class', 'CLASS', 'Project', 'PROJECT', 'SubType',
+    'SUBTYPE', 'NAME', 'Name', 'Road_Name', 'ROAD_NAME'
+];
+
+// Build a color expression using candidate fields (coalesced).
+// NOTE: Without 'downcase', the keys in the match expression are now CASE-SENSITIVE.
+const roadColorExpression = [
+    'match',
+    ['to-string', ['coalesce', ...ROAD_CATEGORY_FIELDS.map(f => ['get', f]), '']],
+
+    // --- IMPORTANT: All keys below are now case-sensitive and must match the data source exactly. ---
+
+    // Expressways 🟥 #FF0000
+    'Expressways', '#FF0000',
+
+    // National Corridors GQ and NSEW 🟧 #FF4500
+    'National Corridors GQ and NSEW', '#FF4500',
+
+    // National Highways 🟨 #FFD700
+    'National Highways', '#FFD700',
+
+    // Economic Corridors 🟪 #9400D3
+    'Economic Corridors', '#9400D3',
+
+    // State Highway 🟩 #32CD32
+    'State Highway', '#32CD32',
+
+    // Inter Corridor Route 🟦 #0000FF
+    'Inter Corridors', '#0000FF',
+
+    // Feeder Road 🔵 #1E90FF
+    'Feeder Road', '#1E90FF',
+
+    // Ring Road 🟫 #A0522D
+    'Ring Road', '#A0522D',
+
+    // Peripheral Connectivity Roads ⚫ #696969
+    'Perpheral Connectivity Roads', '#696969',
+
+    // NEIP 🟣 #FF00FF
+    'NEIP', '#FF00FF',
+
+    // OEC and SP NHDP 🟢 #228B22
+    'OEC and SP NHDP', '#228B22',
+
+    // OEC and SP NHO (Violet) 🟣 #8A2BE2
+    'OEC and SP NHO', '#8A2BE2',
+
+    // Default color if no match is found
+    '#000000'
+];
 
   // Helper to add Sentinel LULC as raster tiles from ArcGIS MapServer
   const addSentinelLayer = (map) => {
@@ -411,9 +472,19 @@ export default function Mapping() {
     const map = mapRef.current;
     if (!map) return;
     const { lng, lat } = e.lngLat;
+    // Place or move a single marker to clicked location
+    try {
+      if (!clickMarkerRef.current) {
+        clickMarkerRef.current = new mapboxgl.Marker({ color: '#e11d48' })
+          .setLngLat([lng, lat])
+          .addTo(map);
+      } else {
+        clickMarkerRef.current.setLngLat([lng, lat]);
+      }
+    } catch (_) { /* ignore marker errors */ }
     const base = await getStateDistrictAtPoint(lng, lat);
 
-    const info = { ...base, mnrega: null, water: null, facilities: null, lng, lat };
+    const info = { ...base, mnrega: null, water: null, facilities: null, aquifer: null, lng, lat };
 
     // Facilities counts by selected geography (only when Facilities is toggled on)
     if (showFacilitiesRef.current) {
@@ -562,7 +633,84 @@ export default function Mapping() {
         }
       }
     }
+    // Aquifer (Major Aquifers) - click-based info, prefer geometry-at-click; fallback to State-only filter
+    if (showAquiferRef.current && base.stateName) {
+      try {
+        console.log('[Aquifer] Click detected with aquifer ON. State:', base.stateName);
+        // First try a tiny geometry envelope around click for precise location
+        const padPx = 10;
+        const pMin = { x: e.point.x - padPx, y: e.point.y - padPx };
+        const pMax = { x: e.point.x + padPx, y: e.point.y + padPx };
+        const llMin = map.unproject(pMin);
+        const llMax = map.unproject(pMax);
+        const envelope = {
+          xmin: Math.min(llMin.lng, llMax.lng),
+          ymin: Math.min(llMin.lat, llMax.lat),
+          xmax: Math.max(llMin.lng, llMax.lng),
+          ymax: Math.max(llMin.lat, llMax.lat),
+          spatialReference: { wkid: 4326 }
+        };
+        let params = new URLSearchParams({
+          geometry: JSON.stringify(envelope),
+          geometryType: 'esriGeometryEnvelope',
+          inSR: '4326',
+          spatialRel: 'esriSpatialRelIntersects',
+          returnGeometry: 'false',
+          outFields: '*',
+          f: 'json'
+        });
+        console.log('[Aquifer] Geometry query params:', Object.fromEntries(params));
+        let resp = await fetch(`${AQUIFER_SERVICE}/query?${params.toString()}`);
+        let data = await resp.json();
+        let feat = Array.isArray(data?.features) && data.features.length ? data.features[0] : null;
+        // If geometry pick returns nothing (or service lacks geometry query), fallback to State-only filter
+        if (!feat) {
+          console.log('[Aquifer] Geometry query returned no features. Falling back to state-only WHERE.');
+          const state = String(base.stateName).replace(/'/g, "''");
+          const stateFields = ['state_name','STATE','State','state','STATE_NAME','State_Name','ST_NM','STNAME','STATE_UT','STATEUT','STATE/UT'];
+          const where = `(${stateFields.map(f=>`UPPER(${f})=UPPER('${state}')`).join(' OR ')})`;
+          params = new URLSearchParams({ where, outFields: '*', returnGeometry: 'false', f: 'json' });
+          console.log('[Aquifer] State-only query params:', Object.fromEntries(params));
+          resp = await fetch(`${AQUIFER_SERVICE}/query?${params.toString()}`);
+          data = await resp.json();
+          feat = Array.isArray(data?.features) && data.features.length ? data.features[0] : null;
+        }
+        const attrs = feat?.attributes || {};
+        const lowerMap = new Map(Object.keys(attrs).map(k => [k.toLowerCase(), k]));
+        const getAttr = (cands) => {
+          for (const c of cands) { const key = lowerMap.get(String(c).toLowerCase()); if (key) return attrs[key]; }
+          return undefined;
+        };
+        const stArea = getAttr(['st_area(shape)','st_area(shape_)','shape__area','shape_area','st_area']);
+        const aquifer = getAttr(['aquifer','Aquifer','AQUIFER','aquifers','Aquifers']);
+        const mbgl = getAttr(['mbgl','MBGL']);
+        const avgMbgl = getAttr(['avg_mbgl','AVG_MBGL','avg mbgl','avgmbgl']);
+        if (aquifer !== undefined || mbgl !== undefined || avgMbgl !== undefined || stArea !== undefined) {
+          info.aquifer = { st_area_shape: stArea, aquifer, mbgl, avg_mbgl: avgMbgl };
+        }
+        if (!feat) {
+          console.log('[Aquifer] No features returned from aquifer service.');
+        } else if (!info.aquifer) {
+          console.log('[Aquifer] Feature found but expected fields missing. Keys:', Object.keys(attrs));
+        } else {
+          console.log('[Aquifer] Aquifer info set:', info.aquifer);
+        }
+      } catch (err) {
+        console.error('Aquifer query failed:', err);
+      }
+    }
     setClickedInfo(info);
+  };
+
+  // Close the info panel and remove the click marker
+  const closeClickedInfo = () => {
+    try {
+      if (clickMarkerRef.current) {
+        clickMarkerRef.current.remove();
+        clickMarkerRef.current = null;
+      }
+    } catch (_) { /* ignore */ }
+    setClickedInfo(null);
   };
 
   // Build WHERE for water bodies per provided names
@@ -989,6 +1137,8 @@ export default function Mapping() {
   useEffect(() => { showMNREGARef.current = showMNREGA; }, [showMNREGA]);
   const showFacilitiesRef = useRef(false);
   useEffect(() => { showFacilitiesRef.current = showFacilities; }, [showFacilities]);
+  const showAquiferRef = useRef(false);
+  useEffect(() => { showAquiferRef.current = showAquifer; }, [showAquifer]);
   const waterBodySources = {
     Tripura: {
       url: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/Tripura_water_bodies/FeatureServer/0",
@@ -1170,6 +1320,8 @@ export default function Mapping() {
         try {
           // detach click handler
           try { mapInstance.off('click', onMapClick); } catch (_) {}
+          // remove click-follow marker
+          try { if (clickMarkerRef.current) { clickMarkerRef.current.remove(); clickMarkerRef.current = null; } } catch (_) {}
           mapInstance.remove();
           mapRef.current = null;
         } catch (err) {
@@ -1251,6 +1403,23 @@ export default function Mapping() {
           await ensureFacilityIcons(map);
           addFacilitiesSymbolLayer(map);
         }
+        // Re-add Roads layer if toggled on
+        if (showRoads) {
+          removeLayerGroup('roads');
+          try {
+            await addArcGISFeatureLayer(map, {
+              id: 'roads',
+              featureServerUrl: ROAD_SERVICE,
+              where: '1=1',
+              fit: false,
+              paintOverrides: {
+                line: { 'line-color': roadColorExpression, 'line-width': 1.6 },
+              }
+            });
+          } catch (e) {
+            console.error('Failed re-adding roads layer after style change', e);
+          }
+        }
         // Re-add Sentinel LULC if toggled on
         if (showSentinel) {
           addSentinelLayer(map);
@@ -1267,6 +1436,71 @@ export default function Mapping() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStyle]);
+
+  // If Aquifer is toggled ON after a click, fetch aquifer info for the last clicked state
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!showAquifer || !clickedInfo?.stateName) return;
+    (async () => {
+      try {
+        console.log('[Aquifer] Toggle ON detected. Fetching for last clicked state:', clickedInfo.stateName);
+        const state = String(clickedInfo.stateName).replace(/'/g, "''");
+        const stateFields = ['state_name','STATE','State','state','STATE_NAME','State_Name','ST_NM','STNAME','STATE_UT','STATEUT','STATE/UT'];
+        const where = `(${stateFields.map(f=>`UPPER(${f})=UPPER('${state}')`).join(' OR ')})`;
+        const params = new URLSearchParams({ where, outFields: '*', returnGeometry: 'false', f: 'json' });
+        console.log('[Aquifer] Toggle state-only params:', Object.fromEntries(params));
+        const resp = await fetch(`${AQUIFER_SERVICE}/query?${params.toString()}`);
+        const data = await resp.json();
+        const feat = Array.isArray(data?.features) && data.features.length ? data.features[0] : null;
+        const attrs = feat?.attributes || {};
+        const lowerMap = new Map(Object.keys(attrs).map(k => [k.toLowerCase(), k]));
+        const getAttr = (cands) => {
+          for (const c of cands) { const key = lowerMap.get(String(c).toLowerCase()); if (key) return attrs[key]; }
+          return undefined;
+        };
+        const stArea = getAttr(['st_area(shape)','st_area(shape_)','shape__area','shape_area','st_area']);
+        const aquifer = getAttr(['aquifer','Aquifer','AQUIFER']);
+        const mbgl = getAttr(['mbgl','MBGL']);
+        const avgMbgl = getAttr(['avg_mbgl','AVG_MBGL','avg mbgl','avgmbgl']);
+        if (aquifer !== undefined || mbgl !== undefined || avgMbgl !== undefined || stArea !== undefined) {
+          setClickedInfo((prev) => prev ? { ...prev, aquifer: { st_area_shape: stArea, aquifer, mbgl, avg_mbgl: avgMbgl } } : prev);
+        } else {
+          console.log('[Aquifer] Toggle-on fetch: no expected fields. Keys:', Object.keys(attrs));
+        }
+      } catch (e) {
+        console.error('Aquifer fetch on toggle failed:', e);
+      }
+    })();
+  }, [showAquifer]);
+
+  // Toggle Roads layer on demand
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (showRoads) {
+      // Add roads layer
+      (async () => {
+        try {
+          removeLayerGroup('roads');
+          await addArcGISFeatureLayer(map, {
+            id: 'roads',
+            featureServerUrl: ROAD_SERVICE,
+            where: '1=1',
+            fit: false,
+            paintOverrides: {
+              line: { 'line-color': roadColorExpression, 'line-width': 1.6 },
+            }
+          });
+        } catch (e) {
+          console.error('Failed to add roads layer:', e);
+        }
+      })();
+    } else {
+      // Remove roads layer
+      removeLayerGroup('roads');
+    }
+  }, [showRoads]);
 
   // Toggle Sentinel LULC overlay when checkbox changes
   useEffect(() => {
@@ -1831,6 +2065,16 @@ export default function Mapping() {
                   />
                   <span>Show Districts</span>
                 </label>
+                {/* Road Networks toggle */}
+                <label className="flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500"
+                    checked={showRoads}
+                    onChange={(e) => setShowRoads(e.target.checked)}
+                  />
+                  <span>Road Networks</span>
+                </label>
               </div>
             </div>
 
@@ -1907,6 +2151,16 @@ export default function Mapping() {
                   />
                   <span>Land Covers</span>
                 </label>
+                {/* Aquifier (Major Aquifers) click info only */}
+                <label className="flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500"
+                    checked={showAquifer}
+                    onChange={(e) => setShowAquifer(e.target.checked)}
+                  />
+                  <span>Aquifier</span>
+                </label>
               </div>
             </div>
           )}
@@ -1926,7 +2180,20 @@ export default function Mapping() {
       {clickedInfo && (
         <div className="absolute top-20 right-4 z-30 max-w-md">
           <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3">
-            <div className="text-sm font-semibold text-gray-700 mb-2">Location Info</div>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="text-sm font-semibold text-gray-700">Location Info</div>
+              <button
+                type="button"
+                aria-label="Close"
+                className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                onClick={closeClickedInfo}
+                title="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
             <table className="w-full text-xs text-gray-800">
               <tbody>
                 <tr>
@@ -1960,6 +2227,26 @@ export default function Mapping() {
                     <tr>
                       <td className="py-1 pr-2 font-medium text-gray-600">Facilities - Transport/Admin</td>
                       <td className="py-1">{clickedInfo.facilities.transportAdmin ?? '-'}</td>
+                    </tr>
+                  </>
+                )}
+                {showAquifer && clickedInfo.aquifer && (
+                  <>
+                    <tr>
+                      <td className="py-1 pr-2 font-medium text-gray-600">st_area(shape)</td>
+                      <td className="py-1">{clickedInfo.aquifer.st_area_shape ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1 pr-2 font-medium text-gray-600">aquifer</td>
+                      <td className="py-1">{clickedInfo.aquifer.aquifer ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1 pr-2 font-medium text-gray-600">mbgl</td>
+                      <td className="py-1">{clickedInfo.aquifer.mbgl ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1 pr-2 font-medium text-gray-600">avg_mbgl</td>
+                      <td className="py-1">{clickedInfo.aquifer.avg_mbgl ?? '-'}</td>
                     </tr>
                   </>
                 )}

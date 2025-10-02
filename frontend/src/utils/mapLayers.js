@@ -60,6 +60,7 @@ export async function addArcGISFeatureLayer(
     returnGeometry: true,
     geometryPrecision: 5, // reduce GeoJSON size for performance
     f: "geojson",
+    resultRecordCount: 2000, // page size
   };
 
   async function postQuery(params) {
@@ -80,26 +81,45 @@ export async function addArcGISFeatureLayer(
   const cacheKey = `${featureServerUrl}|${JSON.stringify(baseParams)}`;
   let geojson = _cacheGet(cacheKey);
   if (!geojson) {
-    // First attempt: POST GeoJSON
-    let resp = await postQuery(baseParams);
-  // Retry without outSR if server errors (some services choke on reprojection)
-    if (!resp.ok && resp.status >= 500) {
-      const { outSR, ...noSr } = baseParams;
-      resp = await postQuery(noSr);
-    }
-    const ok = resp.ok;
-    geojson = ok ? await resp.json() : null;
-    // If POST failed or not a FeatureCollection, try GET fallback
-    if (!ok || !geojson || geojson.type !== 'FeatureCollection') {
-      const params = new URLSearchParams(baseParams).toString();
-      const getUrl = `${featureServerUrl}/query?${params}`;
-      const getResp = await fetch(getUrl);
-      if (!getResp.ok) throw new Error(`ArcGIS query failed: ${getResp.status}`);
-      geojson = await getResp.json();
-      if (!geojson || geojson.type !== 'FeatureCollection') {
-        throw new Error('ArcGIS did not return valid GeoJSON FeatureCollection');
+    // Helper to fetch one page (POST with fallback GET)
+    async function fetchPage(paramsObj) {
+      let resp = await postQuery(paramsObj);
+      if (!resp.ok && resp.status >= 500) {
+        const { outSR, ...noSr } = paramsObj;
+        resp = await postQuery(noSr);
       }
+      let ok = resp.ok;
+      let json = ok ? await resp.json() : null;
+      if (!ok || !json || json.type !== 'FeatureCollection') {
+        const params = new URLSearchParams(paramsObj).toString();
+        const getUrl = `${featureServerUrl}/query?${params}`;
+        const getResp = await fetch(getUrl);
+        if (!getResp.ok) throw new Error(`ArcGIS query failed: ${getResp.status}`);
+        json = await getResp.json();
+        if (!json || json.type !== 'FeatureCollection') {
+          throw new Error('ArcGIS did not return valid GeoJSON FeatureCollection');
+        }
+      }
+      return json;
     }
+
+    // Fetch first page
+    let pageParams = { ...baseParams, resultOffset: 0 };
+    let first = await fetchPage(pageParams);
+    let features = Array.isArray(first.features) ? [...first.features] : [];
+    let exceeded = !!first.exceededTransferLimit;
+    // Page until server indicates no more
+    while (exceeded) {
+      pageParams = { ...baseParams, resultOffset: features.length };
+      const next = await fetchPage(pageParams);
+      const feats = Array.isArray(next.features) ? next.features : [];
+      if (feats.length === 0) break;
+      features.push(...feats);
+      exceeded = !!next.exceededTransferLimit;
+      // Safety cap to avoid endless loops
+      if (features.length > 200000) break;
+    }
+    geojson = { type: 'FeatureCollection', features };
     _cacheSet(cacheKey, geojson);
   }
 
