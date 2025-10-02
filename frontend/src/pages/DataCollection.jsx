@@ -134,31 +134,6 @@ export default function DataCollection() {
     await onApprove(id); // reuse reload logic
   }
 
-  function EditableCell({ value, onSave }) {
-    const [v, setV] = useState(value || '');
-    const [editing, setEditing] = useState(false);
-    return (
-      <div className="flex items-center gap-2">
-        {editing ? (
-          <>
-            <input className="border rounded px-2 py-1 text-sm" value={v} onChange={e => setV(e.target.value)} />
-            <button className="text-xs px-2 py-1 bg-blue-600 text-white rounded" onClick={() => { setEditing(false); onSave(v); }}>Save</button>
-            <button className="text-xs px-2 py-1" onClick={() => { setEditing(false); setV(value || ''); }}>Cancel</button>
-          </>
-        ) : (
-          <>
-            <span>{value || '-'}</span>
-            <button className="text-xs text-blue-600 underline" onClick={() => setEditing(true)}>Edit</button>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  async function onInlineEdit(id, fieldPath, newValue) {
-    // fieldPath examples: 'claimantInfo.name', 'location.gramPanchayat', 'claimantInfo.address'
-    await updateClaim(id, { updates: { [fieldPath]: newValue } });
-  }
 
   function Badge({ count }) {
     if (!count) return null;
@@ -240,27 +215,20 @@ export default function DataCollection() {
                     {row.appliedDate ? new Date(row.appliedDate).toLocaleString() : '-'}
                   </td>
                   <td className="py-2 pr-4">
-                    <EditableCell value={row.name} onSave={(v) => onInlineEdit(row.id, 'claimantInfo.name', v)} />
+                    <span>{row.name || '-'}</span>
                   </td>
                   <td className="py-2 pr-4">
-                    <div className="space-y-1">
-                      <EditableCell value={row.address.full} onSave={(v) => onInlineEdit(row.id, 'claimantInfo.address', v)} />
-                      <div className="text-xs text-gray-600">
-                        <EditableCell value={row.address.state} onSave={(v) => onInlineEdit(row.id, 'location.state', v)} />
-                        {', '}
-                        <EditableCell value={row.address.district} onSave={(v) => onInlineEdit(row.id, 'location.district', v)} />
-                        {', '}
-                        <EditableCell value={row.address.tehsilTaluka} onSave={(v) => onInlineEdit(row.id, 'location.tehsilTaluka', v)} />
-                        {', '}
-                        <EditableCell value={row.address.gramPanchayat} onSave={(v) => onInlineEdit(row.id, 'location.gramPanchayat', v)} />
-                        {', '}
-                        <EditableCell value={row.address.village} onSave={(v) => onInlineEdit(row.id, 'location.villageGramSabha', v)} />
-                      </div>
-                    </div>
+                    <span>
+                      {[
+                        row?.address?.village,
+                        row?.address?.district,
+                        row?.address?.state,
+                      ].filter(Boolean).join(', ') || '-'}
+                    </span>
                   </td>
                   <td className="py-2 pr-4">{row.formType || '-'}</td>
                   <td className="py-2 pr-4 space-x-2 whitespace-nowrap">
-                    <button className="px-2 py-1 rounded bg-green-600 text-white" onClick={() => onApprove(row.id)}>Approve</button>
+                    <button className="px-2 py-1 rounded bg-green-600 text-white" onClick={() => onApprove(row.id)}>Accept</button>
                     <button className="px-2 py-1 rounded bg-red-600 text-white" onClick={() => onReject(row.id)}>Reject</button>
                   </td>
                 </tr>

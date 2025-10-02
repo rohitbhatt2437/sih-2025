@@ -18,9 +18,21 @@ function pickAfterLabel(text, labels) {
 
 function detectFormType(text) {
   const t = text.toLowerCase();
-  if (/form\s*c\b/.test(t) || /community resource claim/i.test(t)) return 'COMMUNITY_RESOURCE_CLAIM_C';
-  if (/form\s*b\b/.test(t) || /community rights claim/i.test(t)) return 'COMMUNITY_RIGHTS_CLAIM_B';
-  if (/form\s*a\b/.test(t) || /individual\s+claim/i.test(t)) return 'INDIVIDUAL_CLAIM_A';
+  // Map to strings allowed by Claim.model enum for formType
+  // Enum includes variants like:
+  // - 'title to community forest resources'
+  // - 'claim form for community rights'
+  // - 'claim form for rights to forest land'
+
+  if (/form\s*c\b/.test(t) || /community\s+resource\s+claim/i.test(t) || /community\s+forest\s+resource/i.test(t)) {
+    return 'title to community forest resources';
+  }
+  if (/form\s*b\b/.test(t) || /community\s+rights\s+claim/i.test(t) || /community\s+rights/i.test(t)) {
+    return 'claim form for community rights';
+  }
+  if (/form\s*a\b/.test(t) || /individual\s+claim/i.test(t) || /forest\s+land\s+under\s+occupation/i.test(t)) {
+    return 'claim form for rights to forest land';
+  }
   return null;
 }
 

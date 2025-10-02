@@ -684,7 +684,7 @@ export default function Home() {
 
           {/* Forest Rights Charts */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-            <ForestRightsCharts stateData={chartData} />
+            <ForestRightsCharts stateData={chartData} /> 
           </div>
         </div>
       </div>
