@@ -4,6 +4,10 @@ import { Claim } from '../models/Claim.js';
 
 const router = express.Router();
 
+function escapeRegex(s = '') {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // GET /api/claims/states?status=UNAPPROVED
 router.get('/states', async (req, res) => {
   try {
@@ -26,8 +30,13 @@ router.get('/districts', async (req, res) => {
     const { state } = req.query;
     const status = req.query.status || 'UNAPPROVED';
     if (!state) return res.status(400).json({ error: 'state is required' });
+    const normState = String(state || '').trim();
+    const stateRegex = new RegExp(escapeRegex(normState), 'i');
     const data = await Claim.aggregate([
-      { $match: { status, 'location.state': state } },
+      { $match: { status, $or: [
+        { 'location.state': { $regex: stateRegex } },
+        { 'claimantInfo.address': { $regex: stateRegex } },
+      ] } },
       { $group: { _id: '$location.district', count: { $sum: 1 } } },
       { $project: { district: '$_id', count: 1, _id: 0 } },
       { $sort: { district: 1 } },
@@ -44,8 +53,15 @@ router.get('/villages', async (req, res) => {
     const { state, district } = req.query;
     const status = req.query.status || 'UNAPPROVED';
     if (!state || !district) return res.status(400).json({ error: 'state and district are required' });
+    const normState = String(state || '').trim();
+    const normDistrict = String(district || '').trim();
+    const stateRegex = new RegExp(escapeRegex(normState), 'i');
+    const districtRegex = new RegExp(escapeRegex(normDistrict), 'i');
     const data = await Claim.aggregate([
-      { $match: { status, 'location.state': state, 'location.district': district } },
+      { $match: { status, $and: [
+        { $or: [ { 'location.state': { $regex: stateRegex } }, { 'claimantInfo.address': { $regex: stateRegex } } ] },
+        { $or: [ { 'location.district': { $regex: districtRegex } }, { 'claimantInfo.address': { $regex: districtRegex } } ] },
+      ] } },
       { $group: { _id: '$location.villageGramSabha', count: { $sum: 1 } } },
       { $project: { village: '$_id', count: 1, _id: 0 } },
       { $sort: { village: 1 } },
@@ -62,9 +78,33 @@ router.get('/list', async (req, res) => {
     const { state, district, village } = req.query;
     const status = req.query.status || 'UNAPPROVED';
     const q = { status };
-    if (state) q['location.state'] = state;
-    if (district) q['location.district'] = district;
-    if (village) q['location.villageGramSabha'] = village;
+    const andClauses = [];
+    if (state) {
+      const stateRegex = new RegExp(escapeRegex(String(state).trim()), 'i');
+      andClauses.push({ $or: [
+        { 'location.state': { $regex: stateRegex } },
+        { 'claimantInfo.address': { $regex: stateRegex } },
+      ]});
+    }
+    if (district) {
+      const districtRegex = new RegExp(escapeRegex(String(district).trim()), 'i');
+      andClauses.push({ $or: [
+        { 'location.district': { $regex: districtRegex } },
+        { 'claimantInfo.address': { $regex: districtRegex } },
+      ]});
+    }
+    if (village) {
+      const villageRegex = new RegExp(escapeRegex(String(village).trim()), 'i');
+      andClauses.push({ $or: [
+        { 'location.villageGramSabha': { $regex: villageRegex } },
+        { 'claimantInfo.address': { $regex: villageRegex } },
+      ]});
+    }
+    if (andClauses.length === 1) {
+      Object.assign(q, andClauses[0]);
+    } else if (andClauses.length > 1) {
+      q.$and = andClauses;
+    }
     const items = await Claim.find(q)
       .sort({ submissionDate: -1 })
       .limit(500)
@@ -75,6 +115,7 @@ router.get('/list', async (req, res) => {
       status: d.status,
       name: d.claimantInfo?.name || '',
       appliedDate: d.submissionDate || d.createdAt,
+      approvalDate: d.approvalDate || null,
       address: {
         state: d.location?.state || '',
         district: d.location?.district || '',

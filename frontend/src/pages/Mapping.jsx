@@ -11,6 +11,11 @@ const MNREGA_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/MGNREG
 const FACILITIES_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/PMGSY/IN_PMGSY_RuralFacilities_2021/MapServer/0';
 const ROAD_SERVICE = 'https://livingatlas.esri.in/server/rest/services/Road_Network/Road_Centerline_Bharatmala/MapServer/0';
 const AQUIFER_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/Water/Major_Aquifers/MapServer/0';
+// Water level layers
+const WL_JAN_PRE_URL = 'https://livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/0'; // field wl_mbgl
+const WL_PRE_URL     = 'https://livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/1'; // field dtwl_
+const WL_DURING_URL  = 'https://livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/2'; // field wl_mbgl
+const WL_POST_URL    = 'https://livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/3'; // field wl_mbgl
 
 // Base64 icons for Facilities categories
 const ICON_AGRO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAaCAYAAAC+aNwHAAAACXBIWXMAAA7EAAAOxAGVKw4bAAABn0lEQVQ4jbWTsU7DMBRFb1L/RCvmUIkxDHwBU2FC4g/CxJSKtQ0jaiem9g9YCRMLKwMZQW3FCKnEyJ4YXacOaeq6VRFX8uCXvPPs964F/ijxL4B2CD8HfDhoQaKZO3gQEulkiGQjwOuin0v01EYWMVciyItv0WyAvhGwf4WWzDCCRGfteSV6XojObIjDFYDMVFWVfH4UqHWw5+P1I8Hd81ithXwvxGg2xEUJaBd3DnTy9dmoLEoI91/fczy9xToctEOM2RPBnWrYQgSYdHncqwJ0TqKvcFKtaJIhzpzxyhR4ZxOE8ZrSsgcAYt1ANqvaA63bx2g54GBeAlwg4Zw1gA3jnfUUmFy9v8qRqigUgN30QuUydXb+XE+oKdGuFOWJGjiVGT5tWWV1FB5YAkxvkHoh6BbzHH+l5r8CoJwGIplZAXMXqgiMgClP0UVEz68BxPUXKep/8LXxweiGVpRo/1sBVO4gciXuUYvBIGEKvg8QV8fK6oxtDdCjyoEXW3UrYFKYi3ZN11W3AlDIaseNAPrCydDcGUBf6Ge7E2Ab/QCO5aTjhmlSiAAAAABJRU5ErkJggg==';
@@ -39,6 +44,7 @@ export default function Mapping() {
   const [showFacilities, setShowFacilities] = useState(false);
   const [showSentinel, setShowSentinel] = useState(false);
   const [showAquifer, setShowAquifer] = useState(false);
+  const [showWaterLevel, setShowWaterLevel] = useState(false);
   // MNREGA service schema cache
   const [mnregaFields, setMnregaFields] = useState(null);
   // State for districts and villages dropdowns
@@ -472,6 +478,7 @@ const roadColorExpression = [
     const map = mapRef.current;
     if (!map) return;
     const { lng, lat } = e.lngLat;
+    console.log('[Click]', { lng, lat, showAquifer: showAquiferRef.current, showWaterLevel: showWaterLevelRef.current, selectedState, selectedDistrict, selectedVillage });
     // Place or move a single marker to clicked location
     try {
       if (!clickMarkerRef.current) {
@@ -484,7 +491,7 @@ const roadColorExpression = [
     } catch (_) { /* ignore marker errors */ }
     const base = await getStateDistrictAtPoint(lng, lat);
 
-    const info = { ...base, mnrega: null, water: null, facilities: null, aquifer: null, lng, lat };
+    const info = { ...base, mnrega: null, water: null, facilities: null, aquifer: null, waterLevel: null, lng, lat };
 
     // Facilities counts by selected geography (only when Facilities is toggled on)
     if (showFacilitiesRef.current) {
@@ -697,6 +704,157 @@ const roadColorExpression = [
         }
       } catch (err) {
         console.error('Aquifer query failed:', err);
+      }
+    }
+    // Water Level (4 layers) - click-based; prefer nearest station by geometry, fallback to attribute WHERE
+    if (showWaterLevelRef.current && (selectedState || base.stateName)) {
+      try {
+        console.log('[WaterLevel] Click path: ON with filters', { selectedState, selectedDistrict, selectedVillage, baseState: base.stateName, baseDistrict: base.districtName });
+        // Ensure table rows persist even if fetch fails
+        info.waterLevel = { jan_pre_monsoon: null, pre_monsoon: null, during_monsoon: null, post_monsoon: null, village_name: selectedVillage || null };
+        const esc = (s) => String(s).replace(/'/g, "''");
+        const stateVal = esc(selectedState || base.stateName);
+        const districtVal = (selectedDistrict || base.districtName) ? esc(selectedDistrict || base.districtName) : null;
+        const villageVal = (selectedVillage || base.villageName) ? esc(selectedVillage || base.villageName) : null;
+        // Build progressive WHEREs: full -> no village -> state only
+        const stateFields = ["state","state_","STATE","STATE_","State","State_","state_name","STATE_NAME"];
+        const distFields  = ["district","district_","district_name","DISTRICT","DISTRICT_NAME"];
+        const villFields  = ["village","village_name","VILLAGE","VILLAGE_NAME"];
+        const wState = `(${stateFields.map(f=>`UPPER(${f})=UPPER('${stateVal}')`).join(' OR ')})`;
+        const wDist  = districtVal ? ` AND (${distFields.map(f=>`UPPER(${f})=UPPER('${districtVal}')`).join(' OR ')})` : '';
+        const wVill  = villageVal ? ` AND (${villFields.map(f=>`UPPER(${f})=UPPER('${villageVal}')`).join(' OR ')})` : '';
+        const whereFull = wState + wDist + wVill;
+        const whereNoVillage = wState + wDist;
+        const whereStateOnly = wState;
+        // Helper: haversine distance (meters)
+        const toRad = (d) => (d * Math.PI) / 180;
+        const haversine = (a, b) => {
+          const R = 6371000;
+          const dLat = toRad(b.lat - a.lat);
+          const dLng = toRad(b.lng - a.lng);
+          const lat1 = toRad(a.lat);
+          const lat2 = toRad(b.lat);
+          const sa = Math.sin(dLat/2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2) ** 2;
+          return 2 * R * Math.asin(Math.sqrt(sa));
+        };
+        // Helper: try geometry-based nearest search with increasing buffers, then fallback to WHERE only
+        async function fetchNearestOrWhere(url, valueFields) {
+          const pointGeom = JSON.stringify({ x: lng, y: lat, spatialReference: { wkid: 4326 } });
+          const buffersKm = [2, 5, 10];
+          for (const km of buffersKm) {
+            const params = new URLSearchParams({
+              geometry: pointGeom,
+              geometryType: 'esriGeometryPoint',
+              inSR: '4326',
+              spatialRel: 'esriSpatialRelIntersects',
+              distance: String(km),
+              units: 'esriSRUnit_Kilometer',
+              where: whereFull,
+              outFields: valueFields.join(','),
+              returnGeometry: 'true',
+              orderByFields: 'date_ DESC',
+              resultRecordCount: '5',
+              f: 'json'
+            });
+            const fullUrl = `${url}/query?${params.toString()}`;
+            console.log('[WaterLevel] GET (geom', km, 'km)', fullUrl);
+            const resp = await fetch(fullUrl);
+            if (!resp.ok) { console.error('[WaterLevel] HTTP error', resp.status, fullUrl); continue; }
+            const data = await resp.json();
+            if (Array.isArray(data?.features) && data.features.length) {
+              // Choose nearest with non-null value if available
+              let best = null;
+              let bestDist = Infinity;
+              for (const f of data.features) {
+                const g = f.geometry;
+                if (!g || typeof g.x !== 'number' || typeof g.y !== 'number') continue;
+                const d = haversine({ lng, lat }, { lng: g.x, lat: g.y });
+                const attrs = f.attributes || {};
+                const val = attrs.wl_mbgl ?? attrs.dtwl_;
+                const penalty = (val == null) ? 1e6 : 0; // prefer non-null
+                const score = d + penalty;
+                if (score < bestDist) { bestDist = score; best = attrs; }
+              }
+              if (best) return best;
+            }
+          }
+          // Fallback to attribute-only progressive WHEREs
+          const tries = [whereFull, whereNoVillage, whereStateOnly];
+          for (const w of tries) {
+            const params = new URLSearchParams({ where: w, outFields: valueFields.join(','), returnGeometry: 'false', f: 'json' });
+            const fullUrl = `${url}/query?${params.toString()}`;
+            console.log('[WaterLevel] GET (attr)', fullUrl);
+            const resp = await fetch(fullUrl);
+            if (!resp.ok) { console.error('[WaterLevel] HTTP error', resp.status, fullUrl); continue; }
+            const data = await resp.json();
+            const feat = Array.isArray(data?.features) && data.features.length ? data.features[0] : null;
+            if (feat) return feat.attributes || {};
+          }
+          // Final fallback: nearest by geometry with no WHERE (latest first)
+          for (const km of buffersKm) {
+            const params = new URLSearchParams({
+              geometry: pointGeom,
+              geometryType: 'esriGeometryPoint',
+              inSR: '4326',
+              spatialRel: 'esriSpatialRelIntersects',
+              distance: String(km),
+              units: 'esriSRUnit_Kilometer',
+              where: '1=1',
+              outFields: valueFields.join(','),
+              returnGeometry: 'true',
+              orderByFields: 'date_ DESC',
+              resultRecordCount: '5',
+              f: 'json'
+            });
+            const fullUrl = `${url}/query?${params.toString()}`;
+            console.log('[WaterLevel] GET (geom-no-where', km, 'km)', fullUrl);
+            const resp = await fetch(fullUrl);
+            if (!resp.ok) { console.error('[WaterLevel] HTTP error', resp.status, fullUrl); continue; }
+            const data = await resp.json();
+            if (Array.isArray(data?.features) && data.features.length) {
+              let best = null; let bestDist = Infinity;
+              for (const f of data.features) {
+                const g = f.geometry; if (!g) continue;
+                const d = haversine({ lng, lat }, { lng: g.x, lat: g.y });
+                const attrs = f.attributes || {};
+                const val = attrs.wl_mbgl ?? attrs.dtwl_;
+                const penalty = (val == null) ? 1e6 : 0;
+                const score = d + penalty;
+                if (score < bestDist) { bestDist = score; best = attrs; }
+              }
+              if (best) return best;
+            }
+          }
+          return {};
+        }
+        const janPreAttrs = await fetchNearestOrWhere(WL_JAN_PRE_URL, ['wl_mbgl','state','state_','district','district_name','village','village_name']);
+        const preAttrs    = await fetchNearestOrWhere(WL_PRE_URL,     ['dtwl_','state_','state','district','district_name','village','village_name']);
+        const duringAttrs = await fetchNearestOrWhere(WL_DURING_URL,  ['wl_mbgl','state_','state','district','district_name','village','village_name']);
+        const postAttrs   = await fetchNearestOrWhere(WL_POST_URL,    ['wl_mbgl','state_','state','district','district_name','village','village_name']);
+        const pick = (obj, keys) => {
+          for (const k of keys) if (obj && obj[k] != null) return obj[k];
+          return undefined;
+        };
+        const toNum = (v) => (v == null ? null : Number(v));
+        const janPre = toNum(pick(janPreAttrs, ['wl_mbgl']));
+        const pre    = toNum(pick(preAttrs,    ['dtwl_']));
+        const during = toNum(pick(duringAttrs, ['wl_mbgl']));
+        const post   = toNum(pick(postAttrs,   ['wl_mbgl']));
+        const villageShown = selectedVillage || pick(janPreAttrs, ['village_name']) || pick(preAttrs, ['village_name']) || pick(duringAttrs, ['village_name']) || pick(postAttrs, ['village_name']);
+        info.waterLevel = {
+          jan_pre_monsoon: janPre ?? null,
+          pre_monsoon: pre ?? null,
+          during_monsoon: during ?? null,
+          post_monsoon: post ?? null,
+          village_name: villageShown || null,
+        };
+        console.log('[WaterLevel] Values', info.waterLevel);
+      } catch (e) {
+        console.error('Water Level query failed:', e);
+        // Keep placeholder rows visible
+        if (!info.waterLevel) {
+          info.waterLevel = { jan_pre_monsoon: null, pre_monsoon: null, during_monsoon: null, post_monsoon: null, village_name: selectedVillage || null };
+        }
       }
     }
     setClickedInfo(info);
@@ -1139,6 +1297,8 @@ const roadColorExpression = [
   useEffect(() => { showFacilitiesRef.current = showFacilities; }, [showFacilities]);
   const showAquiferRef = useRef(false);
   useEffect(() => { showAquiferRef.current = showAquifer; }, [showAquifer]);
+  const showWaterLevelRef = useRef(false);
+  useEffect(() => { showWaterLevelRef.current = showWaterLevel; }, [showWaterLevel]);
   const waterBodySources = {
     Tripura: {
       url: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/Tripura_water_bodies/FeatureServer/0",
@@ -1330,6 +1490,67 @@ const roadColorExpression = [
       }
     };
   }, []);
+
+  // When Water Level is toggled ON or filters change (state/district/village),
+  // fetch values for the last clicked location context and update the table.
+  useEffect(() => {
+    if (!showWaterLevel) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const stateForQuery = selectedState || clickedInfo?.stateName;
+    if (!stateForQuery) return;
+    (async () => {
+      try {
+        console.log('[WaterLevel] Toggle/effect path: fetching with filters', { selectedState, selectedDistrict, selectedVillage, stateForQuery });
+        const esc = (s) => String(s).replace(/'/g, "''");
+        const stateVal = esc(stateForQuery);
+        const districtVal = selectedDistrict ? esc(selectedDistrict) : null;
+        const villageVal = selectedVillage ? esc(selectedVillage) : null;
+        // Build progressive WHEREs for effect path as well
+        const stateFieldsE = ["state","state_","STATE","STATE_","State","State_","state_name","STATE_NAME"]; 
+        const distFieldsE  = ["district","district_","district_name","DISTRICT","DISTRICT_NAME"];
+        const villFieldsE  = ["village","village_name","VILLAGE","VILLAGE_NAME"];
+        const wStateE = `(${stateFieldsE.map(f=>`UPPER(${f})=UPPER('${stateVal}')`).join(' OR ')})`;
+        const wDistE  = districtVal ? ` AND (${distFieldsE.map(f=>`UPPER(${f})=UPPER('${districtVal}')`).join(' OR ')})` : '';
+        const wVillE  = villageVal ? ` AND (${villFieldsE.map(f=>`UPPER(${f})=UPPER('${villageVal}')`).join(' OR ')})` : '';
+        const whereFullE = wStateE + wDistE + wVillE;
+        const whereNoVillageE = wStateE + wDistE;
+        const whereStateOnlyE = wStateE;
+
+        async function fetchOne(url, valueFields) {
+          const tries = [whereFullE, whereNoVillageE, whereStateOnlyE];
+          for (const w of tries) {
+            const params = new URLSearchParams({ where: w, outFields: valueFields.join(','), returnGeometry: 'false', f: 'json' });
+            const fullUrl = `${url}/query?${params.toString()}`;
+            console.log('[WaterLevel] GET', fullUrl);
+            const resp = await fetch(fullUrl);
+            if (!resp.ok) {
+              console.error('[WaterLevel] HTTP error', resp.status, fullUrl);
+              continue;
+            }
+            const data = await resp.json();
+            const feat = Array.isArray(data?.features) && data.features.length ? data.features[0] : null;
+            if (feat) return feat.attributes || {};
+          }
+          return {};
+        }
+        const janPreAttrs = await fetchOne(WL_JAN_PRE_URL, ['wl_mbgl','state','state_','district_name','village_name']);
+        const preAttrs    = await fetchOne(WL_PRE_URL,     ['dtwl_','state_','district_name','village_name']);
+        const duringAttrs = await fetchOne(WL_DURING_URL,  ['wl_mbgl','state_','state','district_name','village_name']);
+        const postAttrs   = await fetchOne(WL_POST_URL,    ['wl_mbgl','state_','state','district_name','village_name']);
+        const pick = (obj, keys) => { for (const k of keys) if (obj && obj[k] != null) return obj[k]; return undefined; };
+        const janPre = pick(janPreAttrs, ['wl_mbgl']);
+        const pre    = pick(preAttrs,    ['dtwl_']);
+        const during = pick(duringAttrs, ['wl_mbgl']);
+        const post   = pick(postAttrs,   ['wl_mbgl']);
+        const villageShown = selectedVillage || pick(janPreAttrs, ['village_name']) || pick(preAttrs, ['village_name']) || pick(duringAttrs, ['village_name']) || pick(postAttrs, ['village_name']);
+        setClickedInfo((prev) => prev ? { ...prev, waterLevel: { jan_pre_monsoon: janPre, pre_monsoon: pre, during_monsoon: during, post_monsoon: post, village_name: villageShown || null } } : prev);
+        console.log('[WaterLevel] Effect values', { janPre, pre, during, post, villageShown });
+      } catch (e) {
+        console.error('Water Level effect failed:', e);
+      }
+    })();
+  }, [showWaterLevel, selectedState, selectedDistrict, selectedVillage]);
 
   // When base style changes, update the map style and re-add our custom layers
   useEffect(() => {
@@ -1906,7 +2127,7 @@ const roadColorExpression = [
           // 3. Provide a fallback icon (optional, but good practice)
           '' // No icon if no match
         ],
-        'icon-size': 0.9,
+        'icon-size': 1,
         'icon-allow-overlap': true
       }
     });
@@ -2161,6 +2382,17 @@ const roadColorExpression = [
                   />
                   <span>Aquifier</span>
                 </label>
+                {/* Water Level (4 seasonal layers) */}
+                <label className="flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500"
+                    checked={showWaterLevel}
+                    onChange={(e) => setShowWaterLevel(e.target.checked)}
+                    disabled={!selectedState}
+                  />
+                  <span>Water Level</span>
+                </label>
               </div>
             </div>
           )}
@@ -2204,6 +2436,12 @@ const roadColorExpression = [
                   <td className="py-1 pr-2 font-medium text-gray-600">District</td>
                   <td className="py-1">{clickedInfo.districtName || '-'}</td>
                 </tr>
+                {showWaterLevel && (selectedVillage || clickedInfo.waterLevel?.village_name) && (
+                  <tr>
+                    <td className="py-1 pr-2 font-medium text-gray-600">Village</td>
+                    <td className="py-1">{selectedVillage || clickedInfo.waterLevel?.village_name || '-'}</td>
+                  </tr>
+                )}
                 {clickedInfo.water && (
                   <tr>
                     <td className="py-1 pr-2 font-medium text-gray-600">Water bodies (count)</td>
@@ -2247,6 +2485,26 @@ const roadColorExpression = [
                     <tr>
                       <td className="py-1 pr-2 font-medium text-gray-600">avg_mbgl</td>
                       <td className="py-1">{clickedInfo.aquifer.avg_mbgl ?? '-'}</td>
+                    </tr>
+                  </>
+                )}
+                {showWaterLevel && clickedInfo.waterLevel && (
+                  <>
+                    <tr>
+                      <td className="py-1 pr-2 font-medium text-gray-600">Jan pre monsoon</td>
+                      <td className="py-1">{clickedInfo.waterLevel.jan_pre_monsoon ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1 pr-2 font-medium text-gray-600">Pre monsoon</td>
+                      <td className="py-1">{clickedInfo.waterLevel.pre_monsoon ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1 pr-2 font-medium text-gray-600">During monsoon</td>
+                      <td className="py-1">{clickedInfo.waterLevel.during_monsoon ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1 pr-2 font-medium text-gray-600">Post monsoon</td>
+                      <td className="py-1">{clickedInfo.waterLevel.post_monsoon ?? '-'}</td>
                     </tr>
                   </>
                 )}

@@ -14,6 +14,16 @@ export default function DataCollection() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [claims, setClaims] = useState([]); // { id, formType, status, name, appliedDate, address }
+  const [approvedClaims, setApprovedClaims] = useState([]);
+  const [loadingApproved, setLoadingApproved] = useState(false);
+  const formTypeOptions = [
+    'Claim Form For Rights To Community Forest Resource',
+    'Title to Community Forest Rights',
+    'Title for forest land under occupation',
+    'title to community forest resources',
+    'claim form for rights to forest land',
+    'claim form for community rights',
+  ];
 
   const filteredStates = useMemo(() => {
     // Only show the four states we use, but include counts from API
@@ -76,17 +86,18 @@ export default function DataCollection() {
     })();
   }, [districtSel, stateSel, baseUrl]);
 
-  // Load claims list when village or filters change
+  // Load UNAPPROVED claims list when filters change (only after state is selected)
   useEffect(() => {
     setClaims([]);
-    if (!stateSel) return;
+    if (!stateSel) return; // only render under selected state
     (async () => {
       try {
         setLoading(true);
         setError('');
         const qs = new URLSearchParams({ status: 'UNAPPROVED' });
         if (stateSel) qs.set('state', stateSel);
-        if (districtSel) qs.set('district', districtSel);
+        const cleanDistrict = districtSel ? String(districtSel).split(',')[0].trim() : '';
+        if (cleanDistrict) qs.set('district', cleanDistrict);
         if (villageSel) qs.set('village', villageSel);
         const { data } = await fetchJSON(`${baseUrl}/api/claims/list?${qs.toString()}`);
         setClaims(Array.isArray(data) ? data : []);
@@ -98,12 +109,43 @@ export default function DataCollection() {
     })();
   }, [stateSel, districtSel, villageSel, baseUrl]);
 
+  // Load APPROVED claims state-wise when a state is selected (ignore district/village filters)
+  useEffect(() => {
+    setApprovedClaims([]);
+    if (!stateSel) return;
+    (async () => {
+      try {
+        setLoadingApproved(true);
+        setError('');
+        const qs = new URLSearchParams({ status: 'APPROVED' });
+        qs.set('state', stateSel);
+        // Intentionally do not filter by district/village to show all approved claims in the state
+        const { data } = await fetchJSON(`${baseUrl}/api/claims/list?${qs.toString()}`);
+        setApprovedClaims(Array.isArray(data) ? data : []);
+      } catch (e) {
+        setError(e?.message || 'Failed to load approved claims');
+      } finally {
+        setLoadingApproved(false);
+      }
+    })();
+  }, [stateSel, baseUrl]);
+
   async function updateClaim(id, payload) {
     await fetchJSON(`${baseUrl}/api/claims/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+  }
+
+  async function updateFormTypeInline(id, value) {
+    try {
+      await updateClaim(id, { updates: { formType: value || null } });
+      // reflect immediately in local state
+      setClaims(prev => prev.map(c => c.id === id ? { ...c, formType: value } : c));
+    } catch (e) {
+      window.alert(e?.message || 'Failed to update form type');
+    }
   }
 
   async function onApprove(id) {
@@ -141,8 +183,8 @@ export default function DataCollection() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-lg border p-4">
+    <div className="space-y-4 w-full">
+      <div className="bg-white rounded-lg border p-4 w-full">
         <h2 className="text-lg font-semibold text-gray-800 mb-3">Data Collection - Pending Review</h2>
 
         {/* State pills with pending badges */}
@@ -191,14 +233,14 @@ export default function DataCollection() {
         {error && <div className="text-sm text-red-600">{error}</div>}
       </div>
 
-      {/* Claims table */}
+      {/* UNAPPROVED Claims table (renders only when state is selected) */}
       <div className="bg-white rounded-lg border p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold text-gray-800">Unapproved Claims</h3>
           {loading && <div className="text-sm text-gray-500">Loading…</div>}
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full table-fixed text-sm">
             <thead>
               <tr className="text-left text-gray-600 border-b">
                 <th className="py-2 pr-4">Applied Date</th>
@@ -226,7 +268,20 @@ export default function DataCollection() {
                       ].filter(Boolean).join(', ') || '-'}
                     </span>
                   </td>
-                  <td className="py-2 pr-4">{row.formType || '-'}</td>
+                  <td className="py-2 pr-4 min-w-[260px]">
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={row.formType || ''}
+                        onChange={e => updateFormTypeInline(row.id, e.target.value)}
+                      >
+                        <option value="">Select form type…</option>
+                        {formTypeOptions.map(ft => (
+                          <option key={ft} value={ft}>{ft}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </td>
                   <td className="py-2 pr-4 space-x-2 whitespace-nowrap">
                     <button className="px-2 py-1 rounded bg-green-600 text-white" onClick={() => onApprove(row.id)}>Accept</button>
                     <button className="px-2 py-1 rounded bg-red-600 text-white" onClick={() => onReject(row.id)}>Reject</button>
@@ -235,7 +290,54 @@ export default function DataCollection() {
               ))}
               {claims.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-gray-500">No pending claims for selected filters.</td>
+                  <td colSpan={5} className="py-6 text-center text-gray-500">{stateSel ? 'No pending claims for selected filters.' : 'Select a state to view unapproved claims.'}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* APPROVED Claims table (state-wise) */}
+      <div className="bg-white rounded-lg border p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-800">Approved Claims {stateSel ? `(State: ${stateSel})` : ''}</h3>
+          {loadingApproved && <div className="text-sm text-gray-500">Loading…</div>}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-600 border-b">
+                <th className="py-2 pr-4">Approved Date</th>
+                <th className="py-2 pr-4">Name</th>
+                <th className="py-2 pr-4">Address</th>
+                <th className="py-2 pr-4">Form Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {approvedClaims.map(row => (
+                <tr key={row.id} className="border-b align-top">
+                  <td className="py-2 pr-4">
+                    {row.appliedDate ? new Date(row.appliedDate).toLocaleString() : '-'}
+                  </td>
+                  <td className="py-2 pr-4">
+                    <span>{row.name || '-'}</span>
+                  </td>
+                  <td className="py-2 pr-4">
+                    <span>
+                      {[
+                        row?.address?.village,
+                        row?.address?.district,
+                        row?.address?.state,
+                      ].filter(Boolean).join(', ') || '-'}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-4">{row.formType || '-'}</td>
+                </tr>
+              ))}
+              {approvedClaims.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-6 text-center text-gray-500">{stateSel ? 'No approved claims found for this state.' : 'Select a state to view approved claims.'}</td>
                 </tr>
               )}
             </tbody>
