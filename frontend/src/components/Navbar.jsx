@@ -28,41 +28,11 @@ export default function Navbar() {
                 Home
               </Link>
             </li>
-            <li className="relative">
-              <button
-                className={navItemClass + " inline-flex items-center gap-1"}
-                onClick={() => setDropdownOpen((v) => !v)}
-                aria-haspopup="menu"
-                aria-expanded={dropdownOpen}
-              >
-                Wetland Authority Delhi
-                <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" />
-                </svg>
-              </button>
-              {dropdownOpen && (
-                <div
-                  className="absolute left-0 mt-1 w-60 bg-white text-gray-900 rounded shadow-lg z-20"
-                  role="menu"
-                >
-                  <a href="#" className="block px-4 py-2 hover:bg-gray-100" role="menuitem">
-                    About WAD
-                  </a>
-                  <a href="#" className="block px-4 py-2 hover:bg-gray-100" role="menuitem">
-                    Guidelines
-                  </a>
-                  <a href="#" className="block px-4 py-2 hover:bg-gray-100" role="menuitem">
-                    Contact
-                  </a>
-                </div>
-              )}
-            </li>
+            
             <li><Link to="/mapping" className={navItemClass}>Mapping</Link></li>
             <li><Link to="/ocr" className={navItemClass}>Scan documents</Link></li>
-            <li><a href="#" className={navItemClass}>Document Data</a></li>
             <li><Link to="/datacollection" className={navItemClass}>Data Collection</Link></li>
-            <li><a href="#" className={navItemClass}>Water Quality Map</a></li>
-            <li><a href="#" className={navItemClass}>Vegetation Map</a></li>
+            <li><Link to="/mpp" className={navItemClass}>MPP</Link></li>
           </ul>
         </div>
 

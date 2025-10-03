@@ -152,6 +152,28 @@ const ROAD_LEGEND = [
   { label: 'OEC and SP NHO', color: '#8A2BE2' },
 ];
 
+  // Returns a short aquifer description based on aquifer type text
+  const getAquiferDescription = (name) => {
+    const t = String(name || '').toLowerCase();
+    if (!t) return '-';
+    if (t.includes('alluv')) return '10–50 (sandy zones); 1–10 (silt/clay zones). Very high recharge.';
+    if (t.includes('basalt')) return '0.5–5 (fractured/weathered zones). Moderate recharge.';
+    if (t.includes('basement gneiss')) return '0.1–1. Slow recharge.'; // before generic gneiss
+    if (t.includes('charnockite')) return '0.1–1. Low permeability.';
+    if (t.includes('gneiss')) return '0.1–1. Same as basement gneiss; limited recharge.';
+    if (t.includes('granite')) return '0.1–1. Very slow recharge.';
+    if (t.includes('intrusive') || t.includes('igneous')) return '0.1–1. Recharge depends on fractures.';
+    if (t.includes('khondalite')) return '0.1–1. Poor recharge.';
+    if (t.includes('laterite')) return '0.5–2. Moderate recharge in weathered layers.';
+    if (t.includes('limestone')) return '1–10 (solution channels/fractures). Moderate recharge.';
+    if (t.includes('quartzite')) return '0.1–1. Very slow recharge.';
+    if (t.includes('sandstone')) return '5–20. High permeability.';
+    if (t.includes('schist')) return '0.1–1. Low recharge.';
+    if (t.includes('shale')) return '<0.1. Very poor permeability.';
+    if (t.includes('unclassified')) return 'Variable; site-specific. Depends on local geology and weathering.';
+    return 'Variable; site-specific. Depends on local geology and weathering.';
+  };
+
   // Helper to add Sentinel LULC as raster tiles from ArcGIS MapServer
   const addSentinelLayer = (map) => {
     // Do not add if toggle is off by the time this runs
@@ -663,8 +685,8 @@ const ROAD_LEGEND = [
           const have = haveKey ? attrs[haveKey] : undefined;
           if (tot !== undefined || have !== undefined) {
             info.mnrega = {
-              tot_fra_beneficiaries_regis: tot,
-              no_fra_beneficiaries_having: have,
+              tot_fra_beneficiaries_regis : tot,
+              no_fra_beneficiaries_having : have,
             };
           } else {
             if (process.env.NODE_ENV !== 'production') {
@@ -980,23 +1002,46 @@ const ROAD_LEGEND = [
     }
   };
 
-  // Helper to remove a layer group that may have sublayers created by addArcGISFeatureLayer
+  // Helper to remove a layer group and any layers referencing its source (prevents source removal warnings)
   const removeLayerGroup = (baseId) => {
     const map = mapRef.current;
     if (!map) return;
-    const subs = ["-fill", "-outline", "-line", "-circle", "-label"]; 
-    subs.forEach((s) => {
-      const id = `${baseId}${s}`;
-      if (map.getLayer(id)) {
-        try { map.removeLayer(id); } catch (_) {}
+
+    try {
+      // Remove any ad-hoc layers first (like facilities-icons)
+      const extraIds = [`${baseId}-icons`, `${baseId}-labels`];
+      for (const id of extraIds) {
+        if (map.getLayer(id)) {
+          try { map.removeLayer(id); } catch (_) {}
+        }
       }
-    });
-    if (map.getLayer(baseId)) {
-      try { map.removeLayer(baseId); } catch (_) {}
-    }
-    if (map.getSource(baseId)) {
-      try { map.removeSource(baseId); } catch (_) {}
-    }
+
+      // Remove any layer in style that uses this source (reverse order)
+      const style = map.getStyle && map.getStyle();
+      if (style && Array.isArray(style.layers)) {
+        const toRemove = style.layers.filter(l => l && l.source === baseId).map(l => l.id);
+        for (let i = toRemove.length - 1; i >= 0; i--) {
+          const id = toRemove[i];
+          if (map.getLayer(id)) {
+            try { map.removeLayer(id); } catch (_) {}
+          }
+        }
+      }
+
+      // Remove known sublayer ids we add via helper
+      const subs = ["", "-fill", "-outline", "-line", "-circle", "-label"]; 
+      for (const s of subs) {
+        const id = `${baseId}${s}`;
+        if (map.getLayer(id)) {
+          try { map.removeLayer(id); } catch (_) {}
+        }
+      }
+
+      // Finally remove the source
+      if (map.getSource(baseId)) {
+        try { map.removeSource(baseId); } catch (_) {}
+      }
+    } catch (_) {}
   };
 
   // Function to highlight state boundary
@@ -1470,11 +1515,18 @@ const ROAD_LEGEND = [
       mapRef.current = map;
 
       map.on('error', (e) => {
-        // Suppress benign errors like querying non-existent layer during toggles/style changes
+        // Suppress benign errors during rapid toggles/style changes
         const msg = String(e?.error?.message || '');
-        const benign = msg.includes("does not exist in the map's style") || msg.includes('cannot be queried for features');
+        const lower = msg.toLowerCase();
+        const benign = (
+          lower.includes("does not exist in the map's style") ||
+          lower.includes('does not exist') ||
+          lower.includes('cannot be queried for features') ||
+          lower.includes('cannot be removed while layer') ||
+          lower.includes('is using it') ||
+          lower.includes('source') && lower.includes('cannot be removed')
+        );
         if (benign) {
-          // Just log quietly; don't show user popup
           console.debug('Suppressed Mapbox warning:', msg);
           return;
         }
@@ -2491,7 +2543,7 @@ const ROAD_LEGEND = [
       {/* Click Info Panel */}
       {clickedInfo && (
         <div className="absolute top-20 right-4 z-30 max-w-md">
-          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3">
+          <div className="bg-white/95 backdrop-blur rounded-lg shadow-md border border-gray-300 p-3">
             <div className="flex items-start justify-between gap-3 mb-2">
               <div className="text-sm font-semibold text-gray-700">Location Info</div>
               <button
@@ -2506,15 +2558,15 @@ const ROAD_LEGEND = [
                 </svg>
               </button>
             </div>
-            <table className="w-full text-xs text-gray-800">
-              <tbody>
+            <table className="w-full text-xs text-gray-800 border border-gray-300 rounded-md border-collapse" style={{ borderCollapse: 'collapse' }}>
+              <tbody className="[&>tr>td]:border [&>tr>td]:border-gray-200 [&>tr>td]:px-2 [&>tr>td]:py-1">
                 <tr>
-                  <td className="py-1 pr-2 font-medium text-gray-600">State</td>
-                  <td className="py-1">{clickedInfo.stateName || '-'}</td>
+                  <td className="font-medium text-gray-600 bg-gray-50">State</td>
+                  <td>{clickedInfo.stateName || '-'}</td>
                 </tr>
                 <tr>
-                  <td className="py-1 pr-2 font-medium text-gray-600">District</td>
-                  <td className="py-1">{clickedInfo.districtName || '-'}</td>
+                  <td className="font-medium text-gray-600 bg-gray-50">District</td>
+                  <td>{clickedInfo.districtName || '-'}</td>
                 </tr>
                 {showWaterLevel && (selectedVillage || clickedInfo.waterLevel?.village_name) && (
                   <tr>
@@ -2531,19 +2583,19 @@ const ROAD_LEGEND = [
                 {showFacilities && clickedInfo.facilities && (
                   <>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">Facilities - Agro</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">District Facilities - Agro</td>
                       <td className="py-1">{clickedInfo.facilities.agro ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">Facilities - Education</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">District Facilities - Education</td>
                       <td className="py-1">{clickedInfo.facilities.education ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">Facilities - Medical</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">District Facilities - Medical</td>
                       <td className="py-1">{clickedInfo.facilities.medical ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">Facilities - Transport/Admin</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">District Facilities - Transport/Admin</td>
                       <td className="py-1">{clickedInfo.facilities.transportAdmin ?? '-'}</td>
                     </tr>
                   </>
@@ -2551,39 +2603,43 @@ const ROAD_LEGEND = [
                 {showAquifer && clickedInfo.aquifer && (
                   <>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">st_area(shape)</td>
-                      <td className="py-1">{clickedInfo.aquifer.st_area_shape ?? '-'}</td>
+                      <td className="font-medium text-gray-600 bg-gray-50">st_area(shape)</td>
+                      <td>{clickedInfo.aquifer.st_area_shape ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">aquifer</td>
-                      <td className="py-1">{clickedInfo.aquifer.aquifer ?? '-'}</td>
+                      <td className="font-medium text-gray-600 bg-gray-50">aquifer</td>
+                      <td>{clickedInfo.aquifer.aquifer ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">mbgl</td>
-                      <td className="py-1">{clickedInfo.aquifer.mbgl ?? '-'}</td>
+                      <td className="font-medium text-gray-600 bg-gray-50">aquifer description</td>
+                      <td>{getAquiferDescription(clickedInfo.aquifer.aquifer)}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">avg_mbgl</td>
-                      <td className="py-1">{clickedInfo.aquifer.avg_mbgl ?? '-'}</td>
+                      <td className="font-medium text-gray-600 bg-gray-50">mbgl</td>
+                      <td>{clickedInfo.aquifer.mbgl ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className="font-medium text-gray-600 bg-gray-50">avg_mbgl</td>
+                      <td>{clickedInfo.aquifer.avg_mbgl ?? '-'}</td>
                     </tr>
                   </>
                 )}
                 {showWaterLevel && clickedInfo.waterLevel && (
                   <>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">Jan pre monsoon</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">Jan pre monsoon water level(mbgl)</td>
                       <td className="py-1">{clickedInfo.waterLevel.jan_pre_monsoon ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">Pre monsoon</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">Pre monsoon water level(mbgl)</td>
                       <td className="py-1">{clickedInfo.waterLevel.pre_monsoon ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">During monsoon</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">During monsoon water level(mbgl)</td>
                       <td className="py-1">{clickedInfo.waterLevel.during_monsoon ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">Post monsoon</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">Post monsoon water level(mbgl)</td>
                       <td className="py-1">{clickedInfo.waterLevel.post_monsoon ?? '-'}</td>
                     </tr>
                   </>
@@ -2591,11 +2647,11 @@ const ROAD_LEGEND = [
                 {showMNREGA && (
                   <>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">tot_fra_beneficiaries_regis</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">tot_fra_beneficiaries_regis mnrega</td>
                       <td className="py-1">{clickedInfo.mnrega?.tot_fra_beneficiaries_regis ?? '-'}</td>
                     </tr>
                     <tr>
-                      <td className="py-1 pr-2 font-medium text-gray-600">no_fra_beneficiaries_having</td>
+                      <td className="py-1 pr-2 font-medium text-gray-600">no_fra_beneficiaries_having mnrega</td>
                       <td className="py-1">{clickedInfo.mnrega?.no_fra_beneficiaries_having ?? '-'}</td>
                     </tr>
                   </>
