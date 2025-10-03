@@ -56,6 +56,42 @@ export default function Mapping() {
   // Single marker that follows user clicks
   const clickMarkerRef = useRef(null);
   
+  // Reset all selections and layer toggles
+  const resetAll = () => {
+    try {
+      const map = mapRef.current;
+      // Clear marker
+      if (clickMarkerRef.current) {
+        try { clickMarkerRef.current.remove(); } catch (_) {}
+        clickMarkerRef.current = null;
+      }
+      // Clear Sentinel artifacts immediately
+      try { removeSentinelMask(map); } catch (_) {}
+      try { removeSentinelLayer(map); } catch (_) {}
+    } catch (_) {}
+
+    // Clear selections
+    setSelectedState("");
+    setSelectedDistrict("");
+    setSelectedVillage("");
+    setDistricts([]);
+    setVillages([]);
+    sentinelMaskGeomRef.current = null;
+
+    // Hide overlays
+    setShowDistricts(false);
+    setShowRoads(false);
+    setShowMNREGA(false);
+    setShowFacilities(false);
+    setShowSentinel(false);
+    setShowAquifer(false);
+    setShowWaterLevel(false);
+
+    // Clear info and errors
+    setClickedInfo(null);
+    setError(null);
+  };
+  
   // Helper function to remove layer and source
   const removeLayerAndSource = (id) => {
     const map = mapRef.current;
@@ -65,58 +101,55 @@ export default function Mapping() {
   };
 
   // Roads category styling: attempt to read a category/type attribute and color by value
+  // The Bharatmala layer uses 'baratmlatp1' (primary) for categories. Include common fallbacks.
   const ROAD_CATEGORY_FIELDS = [
-    'Category', 'CATEGORY', 'Type', 'TYPE', 'Road_Type', 'RoadType', 'ROAD_TYPE',
-    'RoadClass', 'ROADCLASS', 'Class', 'CLASS', 'Project', 'PROJECT', 'SubType',
-    'SUBTYPE', 'NAME', 'Name', 'Road_Name', 'ROAD_NAME'
+    // Primary Bharatmala category field
+    'baratmlatp1', 'BARATMLATP1', 'Baratmlatp1',
+    // Secondary + generic fallbacks seen in some services
+    'baratmlatp2', 'BARATMLATP2',
+    'rdtype', 'RDTYPE', 'Road_Type', 'RoadType', 'ROAD_TYPE',
+    'Category', 'CATEGORY', 'Type', 'TYPE',
+    'RoadClass', 'ROADCLASS', 'Class', 'CLASS', 'Project', 'PROJECT', 'SubType', 'SUBTYPE',
+    'NAME', 'Name', 'Road_Name', 'ROAD_NAME'
+  ];
+
+// Build a color expression using candidate fields (coalesced) with robust case-insensitive match.
+const roadColorExpression = [
+  'match',
+  ['downcase', ['to-string', ['coalesce', ...ROAD_CATEGORY_FIELDS.map(f => ['get', f]), '']]],
+
+  // Exact values from service renderer (lowercased on left)
+  'expressways', '#FF0000',                 // red
+  'national corridors gq and nsew', '#FF4500',
+  'national highways', '#FFD700',           // yellow
+  'economic corridors', '#9400D3',          // violet
+  'state highway', '#32CD32',               // lime green
+  'inter corridor route', '#0000FF',        // blue
+  'feeder road', '#1E90FF',                 // dodger blue
+  'ring road', '#A0522D',                   // sienna
+  'perpheral connectivity roads', '#696969',// dim gray
+  'neip', '#FF00FF',                        // magenta
+  'oec and sp nhdp', '#228B22',             // forest green
+  'oec and sp nho', '#8A2BE2',              // blue-violet
+
+  // Default
+  '#000000'
 ];
 
-// Build a color expression using candidate fields (coalesced).
-// NOTE: Without 'downcase', the keys in the match expression are now CASE-SENSITIVE.
-const roadColorExpression = [
-    'match',
-    ['to-string', ['coalesce', ...ROAD_CATEGORY_FIELDS.map(f => ['get', f]), '']],
-
-    // --- IMPORTANT: All keys below are now case-sensitive and must match the data source exactly. ---
-
-    // Expressways 🟥 #FF0000
-    'Expressways', '#FF0000',
-
-    // National Corridors GQ and NSEW 🟧 #FF4500
-    'National Corridors GQ and NSEW', '#FF4500',
-
-    // National Highways 🟨 #FFD700
-    'National Highways', '#FFD700',
-
-    // Economic Corridors 🟪 #9400D3
-    'Economic Corridors', '#9400D3',
-
-    // State Highway 🟩 #32CD32
-    'State Highway', '#32CD32',
-
-    // Inter Corridor Route 🟦 #0000FF
-    'Inter Corridors', '#0000FF',
-
-    // Feeder Road 🔵 #1E90FF
-    'Feeder Road', '#1E90FF',
-
-    // Ring Road 🟫 #A0522D
-    'Ring Road', '#A0522D',
-
-    // Peripheral Connectivity Roads ⚫ #696969
-    'Perpheral Connectivity Roads', '#696969',
-
-    // NEIP 🟣 #FF00FF
-    'NEIP', '#FF00FF',
-
-    // OEC and SP NHDP 🟢 #228B22
-    'OEC and SP NHDP', '#228B22',
-
-    // OEC and SP NHO (Violet) 🟣 #8A2BE2
-    'OEC and SP NHO', '#8A2BE2',
-
-    // Default color if no match is found
-    '#000000'
+// Legend items to mirror the color mapping above
+const ROAD_LEGEND = [
+  { label: 'Expressways', color: '#FF0000' },
+  { label: 'National Corridors GQ and NSEW', color: '#FF4500' },
+  { label: 'National Highways', color: '#FFD700' },
+  { label: 'Economic Corridors', color: '#9400D3' },
+  { label: 'State Highway', color: '#32CD32' },
+  { label: 'Inter Corridor Route', color: '#0000FF' },
+  { label: 'Feeder Road', color: '#1E90FF' },
+  { label: 'Ring Road', color: '#A0522D' },
+  { label: 'Perpheral Connectivity Roads', color: '#696969' },
+  { label: 'NEIP', color: '#FF00FF' },
+  { label: 'OEC and SP NHDP', color: '#228B22' },
+  { label: 'OEC and SP NHO', color: '#8A2BE2' },
 ];
 
   // Helper to add Sentinel LULC as raster tiles from ArcGIS MapServer
@@ -2314,7 +2347,15 @@ const roadColorExpression = [
             </div>
 
             {/* Base Map Style Selector */}
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={resetAll}
+                className="px-3 py-2 text-xs font-medium rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 shadow-sm"
+                title="Reset selections and layers"
+              >
+                Reset
+              </button>
               <select
                 className="text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
                 value={selectedStyle.key}
@@ -2418,6 +2459,31 @@ const roadColorExpression = [
         <div className="absolute top-20 left-4 z-30">
           <div className="rounded-md border border-amber-300 bg-amber-50/95 text-amber-900 p-2 text-xs max-w-sm">
             {error}
+          </div>
+        </div>
+      )}
+
+      {/* Roads Legend - visible only when Road Networks is toggled on */}
+      {showRoads && (
+        <div className="absolute bottom-4 right-4 z-30 max-w-xs select-none">
+          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3">
+            <div className="text-xs font-semibold text-gray-700 mb-2">Highways</div>
+            <table className="w-full text-[11px] text-gray-800">
+              <tbody>
+                {ROAD_LEGEND.map((item) => (
+                  <tr key={item.label} className="align-middle">
+                    <td className="py-1 pr-2">
+                      <span
+                        className="inline-block w-4 h-2 rounded"
+                        style={{ backgroundColor: item.color }}
+                        title={item.label}
+                      />
+                    </td>
+                    <td className="py-1">{item.label}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
