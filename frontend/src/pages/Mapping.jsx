@@ -562,8 +562,11 @@ const roadColorExpression = [
           { x: e.point.x - pad, y: e.point.y - pad },
           { x: e.point.x + pad, y: e.point.y + pad },
         ];
-        const layers = ['mnrega','mnrega-circle','mnrega-line','mnrega-fill','mnrega-outline'];
-        const feats = map.queryRenderedFeatures(bbox, { layers });
+        const candidateLayers = ['mnrega','mnrega-circle','mnrega-line','mnrega-fill','mnrega-outline'];
+        const existingLayers = candidateLayers.filter((id) => {
+          try { return !!map.getLayer(id); } catch (_) { return false; }
+        });
+        const feats = existingLayers.length ? map.queryRenderedFeatures(bbox, { layers: existingLayers }) : [];
         const feat = feats && feats.length ? feats[0] : null;
         const props = feat?.properties || {};
         // try exact + case-insensitive
@@ -737,10 +740,25 @@ const roadColorExpression = [
           const sa = Math.sin(dLat/2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2) ** 2;
           return 2 * R * Math.asin(Math.sqrt(sa));
         };
-        // Helper: try geometry-based nearest search with increasing buffers, then fallback to WHERE only
-        async function fetchNearestOrWhere(url, valueFields) {
+        // Helper: try attribute-only queries first (state/district), then geometry-based nearest with increasing buffers
+        async function fetchNearestOrWhere(url /*, valueFields*/ ) {
           const pointGeom = JSON.stringify({ x: lng, y: lat, spatialReference: { wkid: 4326 } });
-          const buffersKm = [2, 5, 10];
+          const buffersKm = [5, 10, 25];
+
+          // 1) Attribute-only progressive WHEREs (most reliable)
+          const tries = [whereFull, whereNoVillage, whereStateOnly];
+          for (const w of tries) {
+            const params = new URLSearchParams({ where: w, outFields: '*', returnGeometry: 'false', orderByFields: 'date_ DESC', resultRecordCount: '1', f: 'json' });
+            const fullUrl = `${url}/query?${params.toString()}`;
+            console.log('[WaterLevel] GET (attr-first)', fullUrl);
+            const resp = await fetch(fullUrl);
+            if (!resp.ok) { console.error('[WaterLevel] HTTP error', resp.status, fullUrl); continue; }
+            const data = await resp.json();
+            const feat = Array.isArray(data?.features) && data.features.length ? data.features[0] : null;
+            if (feat) return feat.attributes || {};
+          }
+
+          // 2) Geometry-based nearest with increasing buffers
           for (const km of buffersKm) {
             const params = new URLSearchParams({
               geometry: pointGeom,
@@ -750,7 +768,7 @@ const roadColorExpression = [
               distance: String(km),
               units: 'esriSRUnit_Kilometer',
               where: whereFull,
-              outFields: valueFields.join(','),
+              outFields: '*',
               returnGeometry: 'true',
               orderByFields: 'date_ DESC',
               resultRecordCount: '5',
@@ -778,18 +796,6 @@ const roadColorExpression = [
               if (best) return best;
             }
           }
-          // Fallback to attribute-only progressive WHEREs
-          const tries = [whereFull, whereNoVillage, whereStateOnly];
-          for (const w of tries) {
-            const params = new URLSearchParams({ where: w, outFields: valueFields.join(','), returnGeometry: 'false', f: 'json' });
-            const fullUrl = `${url}/query?${params.toString()}`;
-            console.log('[WaterLevel] GET (attr)', fullUrl);
-            const resp = await fetch(fullUrl);
-            if (!resp.ok) { console.error('[WaterLevel] HTTP error', resp.status, fullUrl); continue; }
-            const data = await resp.json();
-            const feat = Array.isArray(data?.features) && data.features.length ? data.features[0] : null;
-            if (feat) return feat.attributes || {};
-          }
           // Final fallback: nearest by geometry with no WHERE (latest first)
           for (const km of buffersKm) {
             const params = new URLSearchParams({
@@ -800,7 +806,7 @@ const roadColorExpression = [
               distance: String(km),
               units: 'esriSRUnit_Kilometer',
               where: '1=1',
-              outFields: valueFields.join(','),
+              outFields: '*',
               returnGeometry: 'true',
               orderByFields: 'date_ DESC',
               resultRecordCount: '5',
@@ -1431,8 +1437,16 @@ const roadColorExpression = [
       mapRef.current = map;
 
       map.on('error', (e) => {
+        // Suppress benign errors like querying non-existent layer during toggles/style changes
+        const msg = String(e?.error?.message || '');
+        const benign = msg.includes("does not exist in the map's style") || msg.includes('cannot be queried for features');
+        if (benign) {
+          // Just log quietly; don't show user popup
+          console.debug('Suppressed Mapbox warning:', msg);
+          return;
+        }
         console.error('Mapbox GL Error:', e);
-        setError('Error loading map: ' + e.error.message);
+        setError('Error loading map: ' + msg);
       });
 
       map.on('style.load', () => {
@@ -2166,9 +2180,7 @@ const roadColorExpression = [
     const districtField = pickField(fields, [
       'district_name', 'DISTRICT_NAME', 'District_Name', 'DISTRICT', 'District', 'DistrictName', 'DTNAME', 'DIST_NAME'
     ]);
-    const villageField = pickField(fields, [
-      'VILLAGE', 'Village', 'VILLAGE_NAME', 'Village_Name', 'VillageName', 'VILLNAME', 'VILL_NAME', 'GramPanchayat', 'GP_NAME'
-    ]);
+    // NOTE: MNREGA layer is district-level; do NOT filter by village to avoid empty results
 
     const clauses = [];
     if (selectedState && stateField) {
@@ -2177,11 +2189,12 @@ const roadColorExpression = [
     if (selectedDistrict && districtField) {
       clauses.push(`UPPER(${districtField})=UPPER('${esc(selectedDistrict)}')`);
     }
-    if (selectedVillage && villageField) {
-      clauses.push(`UPPER(${villageField})=UPPER('${esc(selectedVillage)}')`);
-    }
     if (clauses.length === 0) return null;
-    return clauses.join(' AND ');
+    const where = clauses.join(' AND ');
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[MNREGA] buildMNREGAWhere =', where);
+    }
+    return where;
   };
 
   // Build MNREGA WHERE for provided names (used on click per district)
@@ -2195,16 +2208,17 @@ const roadColorExpression = [
     const districtField = pickField(fields, [
       'district_name', 'DISTRICT_NAME', 'District_Name', 'DISTRICT', 'District', 'DistrictName', 'DTNAME', 'DIST_NAME'
     ]);
-    const villageField = pickField(fields, [
-      'VILLAGE', 'Village', 'VILLAGE_NAME', 'Village_Name', 'VillageName', 'VILLNAME', 'VILL_NAME', 'GramPanchayat', 'GP_NAME'
-    ]);
+    // District-level dataset; ignore villageName to avoid over-filtering
 
     const clauses = [];
     if (stateName && stateField) clauses.push(`UPPER(${stateField})=UPPER('${esc(stateName)}')`);
     if (districtName && districtField) clauses.push(`UPPER(${districtField})=UPPER('${esc(districtName)}')`);
-    if (villageName && villageField) clauses.push(`UPPER(${villageField})=UPPER('${esc(villageName)}')`);
     if (clauses.length === 0) return null;
-    return clauses.join(' AND ');
+    const where = clauses.join(' AND ');
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[MNREGA] buildMNREGAWhereFor =', where);
+    }
+    return where;
   };
 
   return (
