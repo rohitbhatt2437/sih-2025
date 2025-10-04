@@ -152,6 +152,25 @@ const ROAD_LEGEND = [
   { label: 'OEC and SP NHO', color: '#8A2BE2' },
 ];
 
+  // Land Covers legend (Sentinel LULC colors)
+  const LAND_COVER_LEGEND = [
+    { label: 'Alluvium', color: '#ffff87' },
+    { label: 'Basalt', color: '#8cf775' },
+    { label: 'Basement Gneissic Complex', color: '#dd7b62' },
+    { label: 'Charnockite', color: '#b95cf2' },
+    { label: 'Gneiss', color: '#a2a249' },
+    { label: 'Granite', color: '#e3a4c9' },
+    { label: 'Intrusive', color: '#7ad9b5' },
+    { label: 'Khondalites', color: '#5b367f' },
+    { label: 'Laterite', color: '#8e3e59' },
+    { label: 'Limestone', color: '#a69cf3' },
+    { label: 'Quartzite', color: '#8b7b61' },
+    { label: 'Sandstone', color: '#548152' },
+    { label: 'Schist', color: '#d16fc8' },
+    { label: 'Shale', color: '#edbb8a' },
+    { label: 'Unclassified', color: '#6cb85e' },
+  ];
+
   // Returns a short aquifer description based on aquifer type text
   const getAquiferDescription = (name) => {
     const t = String(name || '').toLowerCase();
@@ -2517,7 +2536,7 @@ const ROAD_LEGEND = [
 
       {/* Roads Legend - visible only when Road Networks is toggled on */}
       {showRoads && (
-        <div className="absolute bottom-4 right-4 z-30 max-w-xs select-none">
+        <div className={`absolute ${showSentinel ? 'bottom-28' : 'bottom-4'} right-4 z-30 max-w-xs select-none`}>
           <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3">
             <div className="text-xs font-semibold text-gray-700 mb-2">Highways</div>
             <table className="w-full text-[11px] text-gray-800">
@@ -2532,6 +2551,31 @@ const ROAD_LEGEND = [
                       />
                     </td>
                     <td className="py-1">{item.label}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Land Covers Legend - visible only when Land Covers is toggled on */}
+      {showSentinel && (
+        <div className="absolute bottom-4 right-4 z-30 max-w-xs select-none">
+          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3">
+            <div className="text-xs font-semibold text-gray-700 mb-2">Land Covers</div>
+            <table className="w-full text-[11px] text-gray-800">
+              <tbody>
+                {LAND_COVER_LEGEND.map((item) => (
+                  <tr key={item.label} className="align-middle">
+                    <td className="py-1 pr-2">
+                      <span
+                        className="inline-block align-middle"
+                        style={{ width: 20, height: 20, marginRight: 8, verticalAlign: 'middle', backgroundColor: item.color, border: '1px solid #ccc' }}
+                        title={item.label}
+                      />
+                    </td>
+                    <td className="py-1 pr-2 whitespace-nowrap">{item.label}</td>
                   </tr>
                 ))}
               </tbody>
