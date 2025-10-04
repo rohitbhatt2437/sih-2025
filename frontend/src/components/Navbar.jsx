@@ -32,7 +32,7 @@ export default function Navbar() {
             <li><Link to="/mapping" className={navItemClass}>Mapping</Link></li>
             <li><Link to="/ocr" className={navItemClass}>Scan documents</Link></li>
             <li><Link to="/datacollection" className={navItemClass}>Data Collection</Link></li>
-            <li><Link to="/mpp" className={navItemClass}>MPP</Link></li>
+            <li><Link to="/mpp" className={navItemClass}>DSS</Link></li>
           </ul>
         </div>
 

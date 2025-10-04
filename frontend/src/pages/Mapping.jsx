@@ -10,7 +10,8 @@ const VILLAGE_SERVICE = 'https://livingatlas.esri.in/server/rest/services/IAB202
 const MNREGA_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/MGNREGA/IN_DT_FRABeneficiaryDetail/MapServer/0';
 const FACILITIES_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/PMGSY/IN_PMGSY_RuralFacilities_2021/MapServer/0';
 const ROAD_SERVICE = 'https://livingatlas.esri.in/server/rest/services/Road_Network/Road_Centerline_Bharatmala/MapServer/0';
-const AQUIFER_SERVICE = 'https://livingatlas.esri.in/server1/rest/services/Water/Major_Aquifers/MapServer/0';
+const AQUIFER_ROOT = 'https://livingatlas.esri.in/server1/rest/services/Water/Major_Aquifers/MapServer';
+const AQUIFER_SERVICE = `${AQUIFER_ROOT}/0`;
 // Water level layers
 const WL_JAN_PRE_URL = 'https://livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/0'; // field wl_mbgl
 const WL_PRE_URL     = 'https://livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/1'; // field dtwl_
@@ -55,6 +56,56 @@ export default function Mapping() {
   const sentinelMaskGeomRef = useRef(null);
   // Single marker that follows user clicks
   const clickMarkerRef = useRef(null);
+
+  // Simple reusable draggable wrapper for panels/legends
+  const Draggable = ({ id, defaultPos, children }) => {
+    const computeDefault = () => {
+      if (typeof window !== 'undefined') {
+        if (typeof defaultPos === 'function') return defaultPos(window);
+      }
+      return defaultPos || { top: 100, left: 100 };
+    };
+    const [pos, setPos] = useState(() => {
+      try {
+        const s = sessionStorage.getItem('drag:' + id);
+        return s ? JSON.parse(s) : computeDefault();
+      } catch (_) { return computeDefault(); }
+    });
+    useEffect(() => {
+      try { sessionStorage.setItem('drag:' + id, JSON.stringify(pos)); } catch (_) {}
+    }, [id, pos]);
+    const ref = useRef(null);
+    useEffect(() => {
+      const el = ref.current; if (!el) return;
+      const onMouseDown = (e) => {
+        // Only left button
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const startX = e.clientX; const startY = e.clientY;
+        const startTop = pos.top; const startLeft = pos.left;
+        const onMove = (ev) => {
+          const next = {
+            top: Math.max(0, startTop + (ev.clientY - startY)),
+            left: Math.max(0, startLeft + (ev.clientX - startX)),
+          };
+          setPos(next);
+        };
+        const onUp = () => {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      };
+      el.addEventListener('mousedown', onMouseDown);
+      return () => { try { el.removeEventListener('mousedown', onMouseDown); } catch (_) {} };
+    }, [pos]);
+    return (
+      <div ref={ref} style={{ position: 'fixed', top: pos.top, left: pos.left }} className="z-50 cursor-move select-none">
+        {children}
+      </div>
+    );
+  };
   
   // Reset all selections and layer toggles
   const resetAll = () => {
@@ -90,6 +141,156 @@ export default function Mapping() {
     // Clear info and errors
     setClickedInfo(null);
     setError(null);
+  };
+
+  // Fetch full GeoJSON from MapServer/0 with paging
+  const fetchAquiferGeoJSON = async (where) => {
+    const pageSize = 2000;
+    let resultOffset = 0;
+    let features = [];
+    for (let guard = 0; guard < 100; guard++) {
+      const params = new URLSearchParams({
+        where: where || '1=1',
+        outFields: '*',
+        returnGeometry: 'true',
+        f: 'geojson',
+        resultOffset: String(resultOffset),
+        resultRecordCount: String(pageSize),
+      });
+      const url = `${AQUIFER_SERVICE}/query?${params.toString()}`;
+      const resp = await fetch(url);
+      if (!resp.ok) break;
+      const data = await resp.json();
+      const batch = Array.isArray(data?.features) ? data.features : [];
+      features.push(...batch);
+      if (data?.exceededTransferLimit && batch.length > 0) {
+        resultOffset += batch.length;
+      } else {
+        break;
+      }
+    }
+    return { type: 'FeatureCollection', features };
+  };
+
+  // Add/update aquifer GeoJSON layers
+  const addAquiferGeoJSONLayer = async (map) => {
+    const where = buildAquiferWhere();
+    const data = await fetchAquiferGeoJSON(where);
+    // Ensure style expression ready
+    const { expr } = await ensureAquiferStyle();
+    if (!map.getSource(AQUIFER_GEOJSON_SOURCE_ID)) {
+      map.addSource(AQUIFER_GEOJSON_SOURCE_ID, { type: 'geojson', data });
+    } else {
+      const src = map.getSource(AQUIFER_GEOJSON_SOURCE_ID);
+      if (src && src.setData) src.setData(data);
+    }
+    // Fill layer
+    if (!map.getLayer(AQUIFER_GEOJSON_FILL_ID)) {
+      map.addLayer({
+        id: AQUIFER_GEOJSON_FILL_ID,
+        type: 'fill',
+        source: AQUIFER_GEOJSON_SOURCE_ID,
+        // Bright, fully opaque fill
+        paint: { 'fill-color': expr || '#c2a5cf', 'fill-opacity': 1.0 },
+      });
+    } else {
+      try { map.setPaintProperty(AQUIFER_GEOJSON_FILL_ID, 'fill-color', expr || '#c2a5cf'); } catch (_) {}
+      try { map.setPaintProperty(AQUIFER_GEOJSON_FILL_ID, 'fill-opacity', 1.0); } catch (_) {}
+    }
+    // Outline layer
+    if (!map.getLayer(AQUIFER_GEOJSON_OUTLINE_ID)) {
+      map.addLayer({
+        id: AQUIFER_GEOJSON_OUTLINE_ID,
+        type: 'line',
+        source: AQUIFER_GEOJSON_SOURCE_ID,
+        paint: { 'line-color': '#222', 'line-width': 1 },
+      });
+    }
+    // Fit map to loaded aquifer bounds if we have a specific selection
+    try {
+      const b = computeGeoJSONBounds(data);
+      if (b && (selectedState || selectedDistrict)) {
+        map.fitBounds(b, { padding: 40, duration: 1000 });
+      }
+    } catch (_) {}
+  };
+
+  const removeAquiferGeoJSONLayer = (map) => {
+    if (!map) return;
+    try { if (map.getLayer(AQUIFER_GEOJSON_OUTLINE_ID)) map.removeLayer(AQUIFER_GEOJSON_OUTLINE_ID); } catch (_) {}
+    try { if (map.getLayer(AQUIFER_GEOJSON_FILL_ID)) map.removeLayer(AQUIFER_GEOJSON_FILL_ID); } catch (_) {}
+    try { if (map.getSource(AQUIFER_GEOJSON_SOURCE_ID)) map.removeSource(AQUIFER_GEOJSON_SOURCE_ID); } catch (_) {}
+  };
+
+  // Build WHERE for aquifer MapServer from selected state/district
+  const buildAquiferWhere = () => {
+    // Use strict field names per service: state_name, district_name
+    let where = '1=1';
+    if (selectedState) {
+      const state = String(selectedState).replace(/'/g, "''");
+      where = `UPPER(state_name)=UPPER('${state}')`;
+    }
+    if (selectedDistrict) {
+      const d = String(selectedDistrict).replace(/'/g, "''");
+      where += ` AND UPPER(district_name)=UPPER('${d}')`;
+    }
+    return where;
+  };
+
+  // Add/remove Aquifer raster using MapServer export with layerDefs for layer 0
+  const addAquiferRaster = (map) => {
+    const where = buildAquiferWhere();
+    const url = new URL('https://livingatlas.esri.in/server1/rest/services/Water/Major_Aquifers/MapServer/export');
+    // Build export template with bbox template and layerDefs
+    // layerDefs expects JSON like {"0":"<where>"}
+    const layerDefs = where ? encodeURIComponent(JSON.stringify({ '0': where })) : '';
+    const tiles = `${url.href}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&layers=show:0${layerDefs ? `&layerDefs=${layerDefs}` : ''}&size=256,256&format=png32&transparent=true&f=image`;
+
+    if (!map.getSource(AQUIFER_RASTER_SOURCE_ID)) {
+      map.addSource(AQUIFER_RASTER_SOURCE_ID, {
+        type: 'raster',
+        tiles: [tiles],
+        tileSize: 256,
+        attribution: '© Esri Living Atlas India'
+      });
+    } else {
+      try {
+        // Update tiles by recreating source is safer; if needed, remove+add
+        map.removeLayer(AQUIFER_RASTER_LAYER_ID);
+        map.removeSource(AQUIFER_RASTER_SOURCE_ID);
+        map.addSource(AQUIFER_RASTER_SOURCE_ID, {
+          type: 'raster',
+          tiles: [tiles],
+          tileSize: 256,
+          attribution: '© Esri Living Atlas India'
+        });
+      } catch (_) { /* fallback handled below when adding layer */ }
+    }
+
+    if (!map.getLayer(AQUIFER_RASTER_LAYER_ID)) {
+      // Place raster below our vector aquifer fill if present, but above base
+      let beforeId;
+      try {
+        // Put raster just below vector aquifer fill for visibility
+        if (map.getLayer('aquifer-fill')) beforeId = 'aquifer-fill';
+        // Otherwise, place below first symbol label layer
+        if (!beforeId) {
+          const style = map.getStyle && map.getStyle();
+          if (style && Array.isArray(style.layers)) {
+            const sym = style.layers.find(l => l.type === 'symbol');
+            beforeId = sym ? sym.id : undefined;
+          }
+        }
+      } catch (_) {}
+      // Keep raster slightly translucent to avoid muddy blending with vector fill
+      const def = { id: AQUIFER_RASTER_LAYER_ID, type: 'raster', source: AQUIFER_RASTER_SOURCE_ID, paint: { 'raster-opacity': 0.6, 'raster-fade-duration': 0 } };
+      try { if (beforeId) map.addLayer(def, beforeId); else map.addLayer(def); } catch (e) { try { map.addLayer(def); } catch (_) {} }
+    }
+  };
+  const removeAquiferRaster = (map) => {
+    if (!map) return;
+    try { if (map.getLayer(AQUIFER_RASTER_LAYER_ID)) map.removeLayer(AQUIFER_RASTER_LAYER_ID); } catch (_) {}
+    try { if (map.getSource(AQUIFER_RASTER_SOURCE_ID)) map.removeSource(AQUIFER_RASTER_SOURCE_ID); } catch (_) {}
   };
   
   // Helper function to remove layer and source
@@ -152,24 +353,77 @@ const ROAD_LEGEND = [
   { label: 'OEC and SP NHO', color: '#8A2BE2' },
 ];
 
-  // Land Covers legend (Sentinel LULC colors)
+  // Land Covers legend (custom categories/colors)
   const LAND_COVER_LEGEND = [
-    { label: 'Alluvium', color: '#ffff87' },
-    { label: 'Basalt', color: '#8cf775' },
-    { label: 'Basement Gneissic Complex', color: '#dd7b62' },
-    { label: 'Charnockite', color: '#b95cf2' },
-    { label: 'Gneiss', color: '#a2a249' },
-    { label: 'Granite', color: '#e3a4c9' },
-    { label: 'Intrusive', color: '#7ad9b5' },
-    { label: 'Khondalites', color: '#5b367f' },
-    { label: 'Laterite', color: '#8e3e59' },
-    { label: 'Limestone', color: '#a69cf3' },
-    { label: 'Quartzite', color: '#8b7b61' },
-    { label: 'Sandstone', color: '#548152' },
-    { label: 'Schist', color: '#d16fc8' },
-    { label: 'Shale', color: '#edbb8a' },
-    { label: 'Unclassified', color: '#6cb85e' },
+    { label: 'Water', color: '#5b98d7' },
+    { label: 'Trees', color: '#4c7b4e' },
+    { label: 'Flooded Vegetation', color: '#7c86bf' },
+    { label: 'Crops', color: '#da9949' },
+    { label: 'Built Area', color: '#b53728' },
+    { label: 'Bare Ground', color: '#a39b90' },
+    { label: 'Snow/Ice', color: '#b6e9fe' },
+    { label: 'Clouds', color: '#616161' },
+    { label: 'Rangeland', color: '#e3e2c6' },
   ];
+
+  // Aquifer legend and color expression derived from ArcGIS renderer at runtime
+  const [aquiferLegend, setAquiferLegend] = useState([]);
+  const [aquiferColorExpr, setAquiferColorExpr] = useState(null);
+  const AQUIFER_RASTER_SOURCE_ID = 'aquifer-raster-src';
+  const AQUIFER_RASTER_LAYER_ID = 'aquifer-raster-layer';
+  const AQUIFER_GEOJSON_SOURCE_ID = 'aquifer-geojson-src';
+  const AQUIFER_GEOJSON_FILL_ID = 'aquifer-geojson-fill';
+  const AQUIFER_GEOJSON_OUTLINE_ID = 'aquifer-geojson-outline';
+
+  // Fetch ArcGIS renderer to build mapbox color expression and legend for aquifers
+  const ensureAquiferStyle = async () => {
+    if (aquiferColorExpr && aquiferLegend && aquiferLegend.length) return { expr: aquiferColorExpr, legend: aquiferLegend };
+    try {
+      // IMPORTANT: fetch renderer from layer 0 (not root) so uniqueValueInfos is present
+      const resp = await fetch(`${AQUIFER_SERVICE}?f=json`);
+      const data = await resp.json();
+      const renderer = data?.drawingInfo?.renderer || {};
+      let expr = ['match', ['upcase', ['to-string', ['coalesce', ['get', 'Aquifer'], ['get', 'AQUIFER'], ['get', 'aquifer'], ['get', 'Aquifers'], ['get', 'AQUIFERS']]]]];
+      const legend = [];
+
+      // Unique value renderer (most likely for aquifers)
+      if (renderer?.type === 'uniqueValue' && Array.isArray(renderer.uniqueValueInfos)) {
+        for (const info of renderer.uniqueValueInfos) {
+          const label = info?.label ?? info?.value ?? '';
+          const val = String(info?.value ?? label ?? '').toUpperCase();
+          const sym = info?.symbol;
+          // Extract fill color as rgba array [r,g,b,a]
+          let color;
+          if (sym?.color && Array.isArray(sym.color)) {
+            const [r,g,b,a] = sym.color;
+            color = `rgba(${r}, ${g}, ${b}, ${a/255})`;
+          } else if (sym?.outline?.color && Array.isArray(sym.outline.color)) {
+            const [r,g,b,a] = sym.outline.color;
+            color = `rgba(${r}, ${g}, ${b}, ${a/255})`;
+          }
+          if (val && color) {
+            expr.push(val, color);
+            legend.push({ label: label || val, color });
+          }
+        }
+        // Default
+        expr.push('#cccccc');
+      } else {
+        // Fallback single color when no renderer is available
+        expr = '#c2a5cf';
+      }
+
+      setAquiferColorExpr(expr);
+      setAquiferLegend(legend);
+      return { expr, legend };
+    } catch (e) {
+      console.error('Failed to fetch aquifer renderer:', e);
+      const fallback = '#c2a5cf';
+      setAquiferColorExpr(fallback);
+      setAquiferLegend([]);
+      return { expr: fallback, legend: [] };
+    }
+  };
 
   // Returns a short aquifer description based on aquifer type text
   const getAquiferDescription = (name) => {
@@ -984,6 +1238,23 @@ const ROAD_LEGEND = [
     return count;
   };
 
+  // Compute bbox from GeoJSON Polygon/MultiPolygon safely
+  const computeGeoJSONBounds = (fc) => {
+    let minX = 180, minY = 90, maxX = -180, maxY = -90;
+    const feats = Array.isArray(fc?.features) ? fc.features : [];
+    for (const f of feats) {
+      const g = f?.geometry; if (!g) continue;
+      const pushCoord = ([x,y]) => { if (typeof x==='number'&&typeof y==='number') { if (x<minX) minX=x; if (y<minY) minY=y; if (x>maxX) maxX=x; if (y>maxY) maxY=y; } };
+      if (g.type === 'Polygon') {
+        for (const ring of g.coordinates || []) for (const c of ring || []) pushCoord(c);
+      } else if (g.type === 'MultiPolygon') {
+        for (const poly of g.coordinates || []) for (const ring of poly || []) for (const c of ring || []) pushCoord(c);
+      }
+    }
+    if (minX === 180) return null;
+    return [[minX, minY], [maxX, maxY]];
+  };
+
   // Minimal helper to highlight selected district boundary
   const showDistrictBoundary = async (stateName, districtName) => {
     const map = mapRef.current;
@@ -1110,15 +1381,11 @@ const ROAD_LEGEND = [
         }
       });
 
-      // Fit to state bounds
-      const bounds = data.features[0].geometry.coordinates[0].reduce((bounds, coord) => {
-        return [
-          [Math.min(bounds[0][0], coord[0]), Math.min(bounds[0][1], coord[1])],
-          [Math.max(bounds[1][0], coord[0]), Math.max(bounds[1][1], coord[1])]
-        ];
-      }, [[180, 90], [-180, -90]]);
-
-      map.fitBounds(bounds, { padding: 50, duration: 1000 });
+      // Fit to state bounds (robust for Polygon/MultiPolygon)
+      const bounds = computeGeoJSONBounds(data);
+      if (bounds) {
+        map.fitBounds(bounds, { padding: 50, duration: 1000 });
+      }
       // Cache geometry for Sentinel mask
       try { sentinelMaskGeomRef.current = (data.features?.[0]?.geometry) || null; } catch (_) { sentinelMaskGeomRef.current = null; }
     } catch (error) {
@@ -1764,6 +2031,53 @@ const ROAD_LEGEND = [
           addSentinelLayer(map);
           await updateSentinelMask();
         }
+
+        // Re-add Aquifer raster + geojson if toggled on
+        if (showAquifer) {
+          try {
+            removeAquiferRaster(map);
+            addAquiferRaster(map);
+          } catch (e) {
+            console.error('Failed re-adding aquifer raster after style change', e);
+          }
+          // Re-add GeoJSON overlay from MapServer/0
+          try {
+            removeAquiferGeoJSONLayer(map);
+            await addAquiferGeoJSONLayer(map);
+          } catch (e) {
+            console.error('Failed re-adding aquifer geojson after style change', e);
+          }
+        }
+
+        // Re-add Aquifer layer if toggled on
+        if (showAquifer && selectedState) {
+          try {
+            // Remove any remnants first
+            removeLayerGroup('aquifer');
+            const { expr } = await ensureAquiferStyle();
+            // Filter to current selection (state/district optional)
+            const state = String(selectedState).replace(/'/g, "''");
+            const stateFields = ['state_name','STATE','State','state','STATE_NAME','State_Name','ST_NM','STNAME','STATE_UT','STATEUT','STATE/UT'];
+            let where = `(${stateFields.map(f=>`UPPER(${f})=UPPER('${state}')`).join(' OR ')})`;
+            if (selectedDistrict) {
+              const d = String(selectedDistrict).replace(/'/g, "''");
+              const distFields = ['district','DISTRICT','District','DISTRICT_NAME','District_Name','DIST_NAME'];
+              where += ` AND (${distFields.map(f=>`UPPER(${f})=UPPER('${d}')`).join(' OR ')})`;
+            }
+            await addArcGISFeatureLayer(map, {
+              id: 'aquifer',
+              featureServerUrl: AQUIFER_SERVICE,
+              where,
+              fit: false,
+              paintOverrides: {
+                fill: { 'fill-color': expr, 'fill-opacity': 0.35 },
+                outline: { 'line-color': '#555', 'line-width': 0.6 },
+              }
+            });
+          } catch (e) {
+            console.error('Failed re-adding aquifer layer after style change', e);
+          }
+        }
       } catch (e) {
         console.error(e);
       }
@@ -1887,6 +2201,42 @@ const ROAD_LEGEND = [
       };
     }
   }, [showSentinel]);
+
+  // Toggle Aquifer layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const baseId = 'aquifer';
+    const run = async () => {
+      try {
+        if (!showAquifer) {
+          removeLayerGroup(baseId);
+          removeAquiferRaster(map);
+          removeAquiferGeoJSONLayer(map);
+          return;
+        }
+        // No state selection required; will fallback to all-India (may be heavy)
+        if (!map.isStyleLoaded()) {
+          await new Promise((resolve) => map.once('style.load', resolve));
+        }
+        // Add raster first for official colors
+        addAquiferRaster(map);
+        // Add the GeoJSON overlay from MapServer/0
+        await addAquiferGeoJSONLayer(map);
+      } catch (e) {
+        console.error('Failed to toggle aquifer layer:', e);
+      }
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAquifer, selectedState, selectedDistrict]);
+
+  // Prefetch aquifer renderer when toggled on so the legend (table) appears immediately
+  useEffect(() => {
+    if (showAquifer) {
+      ensureAquiferStyle().catch(() => {});
+    }
+  }, [showAquifer]);
 
   // Update Sentinel mask whenever selection changes
   useEffect(() => {
@@ -2534,10 +2884,35 @@ const ROAD_LEGEND = [
         </div>
       )}
 
+      {/* Aquifer Legend - match Land Covers table styling, at bottom-right */}
+      {showAquifer && aquiferLegend && aquiferLegend.length > 0 && (
+        <Draggable id="legend-aquifer" defaultPos={(w) => ({ top: w.innerHeight - 380, left: w.innerWidth - 300 })}>
+          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3 max-w-xs">
+            <div className="text-xs font-semibold text-gray-700 mb-2">Aquifers</div>
+            <table className="w-full text-[11px] text-gray-800">
+              <tbody>
+                {aquiferLegend.map((item) => (
+                  <tr key={item.label} className="align-middle">
+                    <td className="py-1 pr-2">
+                      <span
+                        className="inline-block align-middle"
+                        style={{ width: 20, height: 20, marginRight: 8, verticalAlign: 'middle', backgroundColor: item.color, border: '1px solid #ccc' }}
+                        title={item.label}
+                      />
+                    </td>
+                    <td className="py-1 pr-2 whitespace-nowrap">{item.label}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Draggable>
+      )}
+
       {/* Roads Legend - visible only when Road Networks is toggled on */}
       {showRoads && (
-        <div className={`absolute ${showSentinel ? 'bottom-28' : 'bottom-4'} right-4 z-30 max-w-xs select-none`}>
-          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3">
+        <Draggable id="legend-roads" defaultPos={(w) => ({ top: w.innerHeight - 220, left: w.innerWidth - 280 })}>
+          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3 max-w-xs">
             <div className="text-xs font-semibold text-gray-700 mb-2">Highways</div>
             <table className="w-full text-[11px] text-gray-800">
               <tbody>
@@ -2556,13 +2931,13 @@ const ROAD_LEGEND = [
               </tbody>
             </table>
           </div>
-        </div>
+        </Draggable>
       )}
 
       {/* Land Covers Legend - visible only when Land Covers is toggled on */}
       {showSentinel && (
-        <div className="absolute bottom-4 right-4 z-30 max-w-xs select-none">
-          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3">
+        <Draggable id="legend-landcovers" defaultPos={(w) => ({ top: w.innerHeight - 220, left: w.innerWidth - 280 })}>
+          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3 max-w-xs">
             <div className="text-xs font-semibold text-gray-700 mb-2">Land Covers</div>
             <table className="w-full text-[11px] text-gray-800">
               <tbody>
@@ -2581,13 +2956,13 @@ const ROAD_LEGEND = [
               </tbody>
             </table>
           </div>
-        </div>
+        </Draggable>
       )}
 
       {/* Click Info Panel */}
       {clickedInfo && (
-        <div className="absolute top-20 right-4 z-30 max-w-md">
-          <div className="bg-white/95 backdrop-blur rounded-lg shadow-md border border-gray-300 p-3">
+        <Draggable id="panel-info" defaultPos={(w) => ({ top: 80, left: w.innerWidth - 380 })}>
+          <div className="bg-white/95 backdrop-blur rounded-lg shadow-md border border-gray-300 p-3 max-w-md">
             <div className="flex items-start justify-between gap-3 mb-2">
               <div className="text-sm font-semibold text-gray-700">Location Info</div>
               <button
@@ -2652,7 +3027,20 @@ const ROAD_LEGEND = [
                     </tr>
                     <tr>
                       <td className="font-medium text-gray-600 bg-gray-50">aquifer</td>
-                      <td>{clickedInfo.aquifer.aquifer ?? '-'}</td>
+                      <td>
+                        {(() => {
+                          const name = clickedInfo.aquifer.aquifer ?? '-';
+                          const match = aquiferLegend?.find(l => String(l.label).toLowerCase() === String(name||'').toLowerCase());
+                          return (
+                            <span className="inline-flex items-center gap-2">
+                              {match && (
+                                <span style={{ display: 'inline-block', width: 12, height: 12, backgroundColor: match.color, border: '1px solid #ccc' }} />
+                              )}
+                              <span>{name}</span>
+                            </span>
+                          );
+                        })()}
+                      </td>
                     </tr>
                     <tr>
                       <td className="font-medium text-gray-600 bg-gray-50">aquifer description</td>
@@ -2703,7 +3091,7 @@ const ROAD_LEGEND = [
               </tbody>
             </table>
           </div>
-        </div>
+        </Draggable>
       )}
 
       {/* Map Container */}
