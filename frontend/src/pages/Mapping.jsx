@@ -2231,6 +2231,14 @@ const ROAD_LEGEND = [
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAquifer, selectedState, selectedDistrict]);
 
+  // Mirror Water Level to Aquifer: when Aquifer is ON, also enable Water Level logic
+  useEffect(() => {
+    if (showWaterLevel !== showAquifer) {
+      setShowWaterLevel(showAquifer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAquifer]);
+
   // Prefetch aquifer renderer when toggled on so the legend (table) appears immediately
   useEffect(() => {
     if (showAquifer) {
@@ -2858,17 +2866,7 @@ const ROAD_LEGEND = [
                   />
                   <span>Aquifier</span>
                 </label>
-                {/* Water Level (4 seasonal layers) */}
-                <label className="flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500"
-                    checked={showWaterLevel}
-                    onChange={(e) => setShowWaterLevel(e.target.checked)}
-                    disabled={!selectedState}
-                  />
-                  <span>Water Level</span>
-                </label>
+                {/* Water Level checkbox removed; Water Level is now controlled by Aquifer toggle */}
               </div>
             </div>
           )}
