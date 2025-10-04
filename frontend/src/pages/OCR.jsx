@@ -8,7 +8,9 @@ export default function OCR() {
   const [apiStatus, setApiStatus] = useState({ ok: null, message: "" });
   const [selectedState, setSelectedState] = useState("");
   const inputRef = useRef(null);
-  const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
+  // In production (Vercel), use same-origin so requests go to /api/* on the deployed domain.
+  // In development, fall back to VITE_SERVER_URL or localhost:4000.
+  const baseUrl = import.meta.env.PROD ? '' : (import.meta.env.VITE_SERVER_URL || "http://localhost:4000");
 
   const formTypeOptions = [
     'Claim Form For Rights To Community Forest Resource',

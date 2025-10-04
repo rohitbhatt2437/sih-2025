@@ -36,6 +36,11 @@ if (!process.env.VISION_API_KEY) {
   console.warn('[Startup] VISION_API_KEY is not set. /api/ocr will return errors until it is configured.');
 }
 
-app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
-});
+// On Vercel serverless, we export the app and do NOT listen on a port
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Server listening on http://localhost:${PORT}`);
+  });
+}
+
+export default app;

@@ -2864,7 +2864,7 @@ const ROAD_LEGEND = [
                     checked={showAquifer}
                     onChange={(e) => setShowAquifer(e.target.checked)}
                   />
-                  <span>Aquifier</span>
+                  <span>GroundWater(Aquifers and Levels)</span>
                 </label>
                 {/* Water Level checkbox removed; Water Level is now controlled by Aquifer toggle */}
               </div>

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 export default function DataCollection() {
-  const baseUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+  // Use same-origin in production (Vercel). In dev, use VITE_SERVER_URL or localhost.
+  const baseUrl = import.meta.env.PROD ? '' : (import.meta.env.VITE_SERVER_URL || 'http://localhost:4000');
 
   const allowedStates = ['Odisha', 'Tripura', 'Telangana', 'Madhya Pradesh'];
 
