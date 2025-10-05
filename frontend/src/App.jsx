@@ -20,6 +20,21 @@ function App() {
       {/* Utility strip */}
       <TopStrip />
 
+      {/* Moving disclaimer banner (global, above header) */}
+      <style>{`
+        @keyframes app_home_marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+        .app-home-marquee { display: inline-block; white-space: nowrap; will-change: transform; animation: app_home_marquee 18s linear infinite; }
+      `}</style>
+      <div className="w-full bg-red-600 text-white">
+        <div className="relative overflow-hidden">
+          <div className="app-home-marquee py-2">
+            <span className="px-4">
+              This website does not belong to any government organization. This Theme is taken only to just show the exact usecase for FRA, SIH2025 by TechnoTuners.
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Ministry branding header */}
       <BrandingHeader />
 
