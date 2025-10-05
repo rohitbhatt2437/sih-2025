@@ -9,6 +9,7 @@ import { connectDB } from './config/db.js';
 import ocrRouter from './routes/ocr.js';
 import aggregatesRouter from './routes/aggregates.js';
 import claimsRouter from './routes/claims.js';
+import reportRouter from './routes/report.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +27,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/ocr', ocrRouter);
 app.use('/api/aggregates', aggregatesRouter);
 app.use('/api/claims', claimsRouter);
+app.use('/api/report', reportRouter);
 
 // DB and start
 const PORT = process.env.PORT || 4000;
