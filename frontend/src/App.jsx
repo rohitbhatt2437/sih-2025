@@ -56,6 +56,17 @@ function App() {
 
       {/* Footer */}
       <Footer />
+
+      {/* Moving disclaimer banner (bottom, below footer) */}
+      <div className="w-full bg-red-600 text-white mt-0">
+        <div className="relative overflow-hidden">
+          <div className="app-home-marquee py-2">
+            <span className="px-4">
+              This website does not belong to any government organization. This Theme is taken only to just show the exact usecase for FRA, SIH2025 by TechnoTuners.
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

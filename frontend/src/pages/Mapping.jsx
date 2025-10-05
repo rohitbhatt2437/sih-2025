@@ -24,6 +24,29 @@ const ICON_EDU  = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABsAAAAbCAYAAAC
 const ICON_MED  = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABsAAAAbCAYAAACN1PRVAAAACXBIWXMAAA7EAAAOxAGVKw4bAAADPUlEQVRIic2Wy08TURTGz5SCHd10DJi0bEATkko3ZLoxEf6CwkIj4eG63brXBEh0z7asNcUmsLDdGBYmuDOtLpyhiUmpm84kYAobGQK2Y75b7uTOi1Qhxi8hYR49v3vOPee7E6V/qOh/CSsWi0k7MqhGJClh290k7nUluxzpdMzFxUXjWmCbpa0c2ZSLyTdURVFIjsVIlmX2zDDMlfbREW2+3ap1pE5+eX6+9lewN6WSGulKq0o8nk1PpiiZTPjewX2osd9UNX2vCqjdPZsLyzQaBhqwBwqT6ZTKA16me3fH2Z+m19Wv+l61WCxmgoDRMND0wwdqUDaXKT2ZIlmOJT5VPwcCfTCUDhn9KYgLGVrWaULT9AIRzYbC0Ax8j7jOD006+limk70a3byv0p1HOefZwfYGux+fmaX4TNa5j98bhplFlcSmcWdmU04E/azXqFVYo+Pdcu/GNtHxboXGnxeo+Srv3D/Y3qDBkSSlX1dpcKRXkUxminZ2PiC7jA+GOUJ7i+UDzAFdCNdavUZDw+4ynx8arAI889uKQjbZKuLyvXNgGFjMkajDrQ0K09iLgpP1rZTqvC+WGQtvGSYeumFwBgysKAQ5+2G6Vg8p01kaGk6ycn7ZLdPI4xwp07OstKIQD3F9ZYQFcWcQVz8mXOvLGVZaBEfg0fwKTayXWXOgkSbW37lhsszi+mBBQgDtaW9/UR4EbhVW2TXKB/DU+xZrEJQQz3mDBMmBwVThdWI34odY/feXeQZBBsgW17ysfN9G86s+kGGYLK4PBveGqXqFjDBLWD0ggOF/rt4i3HPGZZ1awZmhPWGkMFW4gCgAIEC+PZvzLWbs4rmoxn6TrBOrsrwQMtQ4JuDeXhgHwkF4CTHEKLHY6i5Yo0m2JLlmxwWDtSA7uHeQ2yMwxgH7BBCfL680vU7tdruytPDE5Qi+bsR5hGMC7h2UIQDeFvc2ha7Xa2T/cg9dEAx7h+MBxwTcu5/zTMwIoC7Za0v9nGciEMcE3BumCq8LU2O/yfYIpUNGQaBQGAfiPMIxAfeGqcLrPN8grL2tE6uCZvDuUd8wrovzKAP3hql6v67YO0J7XwnmybSvT7Yrw65DvwFJ/sOpPHBHjgAAAABJRU5ErkJggg==';
 const ICON_TRN  = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAaCAYAAACHD21cAAAACXBIWXMAAA7EAAAOxAGVKw4bAAABCUlEQVQ4jeXTv22DQBTH8e8BGQIkpjg3mcAbeATSRFYygeUJLLmDNUiTCdKEMhO4SJ8+ftE7wl8fxrKSyj/pCqT3ueM9uIgrE/0dfJSEOyyCBWKOFOxNNQ3XYgnJHZBeRUDGk4Ch4puHZpOoRQElQqyP2X29bArVAYo3t+oaSDoYulNalK+6AxXnKXx+QflBzLNk7ExRQ6l3aaAvm6WD/Pbe9hj3T/DFpjNT1Z58uDrMQB2E9jTO9vUCqIPYLLupKnL9nYMaLSpHhf/4y12Y6GbgkcJdn7kY9Eq9dFDv2FoWBLzPoC07Uw5f9Rw2QzSEU9icolM4xhPID/s4JPGhadhg3IneXP0dfwCUi2FilejuzAAAAABJRU5ErkJggg==';
 
+// Claims form types and colors for markers
+export const CLAIM_FORM_TYPES = [
+  'Claim Form For Rights To Community Forest Resource',
+  'Title to Community Forest Rights',
+  'Title for forest land under occupation',
+  'title to community forest resources',
+  'claim form for rights to forest land',
+  'claim form for community rights',
+];
+
+const CLAIM_COLORS = {
+  'Claim Form For Rights To Community Forest Resource': '#e11d48', // rose-600
+  'Title to Community Forest Rights': '#16a34a', // green-600
+  'Title for forest land under occupation': '#2563eb', // blue-600
+  'title to community forest resources': '#7c3aed', // violet-600
+  'claim form for rights to forest land': '#f59e0b', // amber-500
+  'claim form for community rights': '#0ea5e9', // sky-600
+};
+
+const CLAIM_SOURCE_ID = 'claims-points-src';
+const CLAIM_LAYER_ID = 'claims-points-circle';
+const CLAIM_CLUSTER_SOURCE_ID = 'claims-points-src'; // same as source; clustering can be enabled later
+
 // State codes mapping
 const STATE_CODE = {
   'Odisha': 'OD',
@@ -46,6 +69,9 @@ export default function Mapping() {
   const [showSentinel, setShowSentinel] = useState(false);
   const [showAquifer, setShowAquifer] = useState(false);
   const [showWaterLevel, setShowWaterLevel] = useState(false);
+  // Single toggle to show all available schemes (claims)
+  const [showSchemes, setShowSchemes] = useState(false);
+  const [schemeCount, setSchemeCount] = useState(0);
   // MNREGA service schema cache
   const [mnregaFields, setMnregaFields] = useState(null);
   // State for districts and villages dropdowns
@@ -56,6 +82,8 @@ export default function Mapping() {
   const sentinelMaskGeomRef = useRef(null);
   // Single marker that follows user clicks
   const clickMarkerRef = useRef(null);
+  // Cache last FeatureCollection for re-adding after style changes
+  const claimsFCRef = useRef({ type: 'FeatureCollection', features: [] });
 
   // Simple reusable draggable wrapper for panels/legends
   const Draggable = ({ id, defaultPos, children }) => {
@@ -137,6 +165,7 @@ export default function Mapping() {
     setShowSentinel(false);
     setShowAquifer(false);
     setShowWaterLevel(false);
+    setShowSchemes(false);
 
     // Clear info and errors
     setClickedInfo(null);
@@ -299,6 +328,48 @@ export default function Mapping() {
     if (!map) return;
     if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(id)) map.removeSource(id);
+  };
+
+  // Helpers for Claims markers layer
+  const ensureClaimSourceAndLayer = (map) => {
+    if (!map.getSource(CLAIM_SOURCE_ID)) {
+      map.addSource(CLAIM_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+    if (!map.getLayer(CLAIM_LAYER_ID)) {
+      const colorExpr = ['match', ['downcase', ['to-string', ['get', 'formType']]],
+        'claim form for rights to community forest resource', CLAIM_COLORS['Claim Form For Rights To Community Forest Resource'],
+        'title to community forest rights', CLAIM_COLORS['Title to Community Forest Rights'],
+        'title for forest land under occupation', CLAIM_COLORS['Title for forest land under occupation'],
+        'title to community forest resources', CLAIM_COLORS['title to community forest resources'],
+        'claim form for rights to forest land', CLAIM_COLORS['claim form for rights to forest land'],
+        'claim form for community rights', CLAIM_COLORS['claim form for community rights'],
+        '#666666'];
+      map.addLayer({
+        id: CLAIM_LAYER_ID,
+        type: 'circle',
+        source: CLAIM_SOURCE_ID,
+        paint: {
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            3, 6.5,
+            5, 7,
+            8, 8
+          ],
+          'circle-color': colorExpr,
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1.5,
+          'circle-opacity': 1.0,
+        }
+      });
+      // Bring markers above other vector layers for visibility
+      try { map.moveLayer(CLAIM_LAYER_ID); } catch (_) {}
+    }
+  };
+
+  const removeClaimLayer = (map) => {
+    if (!map) return;
+    try { if (map.getLayer(CLAIM_LAYER_ID)) map.removeLayer(CLAIM_LAYER_ID); } catch (_) {}
+    try { if (map.getSource(CLAIM_SOURCE_ID)) map.removeSource(CLAIM_SOURCE_ID); } catch (_) {}
   };
 
   // Roads category styling: attempt to read a category/type attribute and color by value
@@ -2155,6 +2226,72 @@ const ROAD_LEGEND = [
     }
   }, [showRoads]);
 
+  // Fetch and render claims markers when toggle or location filters change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!showSchemes) {
+      removeClaimLayer(map);
+      return;
+    }
+    const fetchAndRender = async () => {
+      try {
+        // Only show APPROVED claims; do not filter by dropdowns to ensure visibility
+        const url = `/api/claims/map-points?status=APPROVED`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        const fc = data && data.type === 'FeatureCollection' ? data : { type: 'FeatureCollection', features: [] };
+        setSchemeCount(Array.isArray(fc.features) ? fc.features.length : 0);
+        // Cache for re-adding after style changes
+        claimsFCRef.current = fc;
+        try {
+          ensureClaimSourceAndLayer(map);
+          const src = map.getSource(CLAIM_SOURCE_ID);
+          if (src && src.setData) src.setData(fc);
+          // Auto-zoom to markers so at least one is visible
+          if (fc.features && fc.features.length > 0) {
+            let minX = 180, minY = 90, maxX = -180, maxY = -90;
+            let firstPt = null;
+            for (const f of fc.features) {
+              const c = f?.geometry?.coordinates;
+              if (Array.isArray(c) && c.length>=2) {
+                const x = Number(c[0]); const y = Number(c[1]);
+                if (Number.isFinite(x) && Number.isFinite(y)) {
+                  if (!firstPt) firstPt = [x, y];
+                  if (x < minX) minX = x; if (y < minY) minY = y;
+                  if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+                }
+              }
+            }
+            if (minX < maxX || minY < maxY) {
+              // Non-zero area
+              map.fitBounds([[minX, minY], [maxX, maxY]], { padding: 50, duration: 800 });
+            } else if (firstPt) {
+              // Single point - fly to it
+              map.easeTo({ center: firstPt, zoom: 7, duration: 700 });
+            }
+          }
+        } catch (err) {
+          // If style not ready, we'll set via styledata listener below
+        }
+      } catch (e) {
+        removeClaimLayer(map);
+      }
+    };
+    fetchAndRender();
+    // Also ensure we re-add after any style change (e.g., basemap switch)
+    const onStyle = () => {
+      if (!showSchemes) return;
+      try {
+        ensureClaimSourceAndLayer(map);
+        const src = map.getSource(CLAIM_SOURCE_ID);
+        if (src && src.setData) src.setData(claimsFCRef.current || { type: 'FeatureCollection', features: [] });
+      } catch (_) {}
+    };
+    map.on('styledata', onStyle);
+    return () => map.off('styledata', onStyle);
+  }, [showSchemes]);
+
   // Toggle Sentinel LULC overlay when checkbox changes
   useEffect(() => {
     const map = mapRef.current;
@@ -2772,6 +2909,21 @@ const ROAD_LEGEND = [
                   />
                   <span>Road Networks</span>
                 </label>
+                {/* Schemes (Claims) single toggle */}
+                <label className="flex items-center gap-2 text-sm text-gray-800 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500"
+                    checked={showSchemes}
+                    onChange={(e) => setShowSchemes(e.target.checked)}
+                  />
+                  <span className="inline-flex items-center gap-2">Schemes (Claims)
+                    {showSchemes && (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-gray-100 border border-gray-200 text-gray-700" title="Markers loaded">{schemeCount}</span>
+                    )}
+                  </span>
+                </label>
+                {/* Legend removed from here; shown as draggable table like other legends */}
               </div>
             </div>
 
@@ -2949,6 +3101,29 @@ const ROAD_LEGEND = [
                       />
                     </td>
                     <td className="py-1 pr-2 whitespace-nowrap">{item.label}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Draggable>
+      )}
+
+      {/* Schemes Legend - visible only when Schemes is toggled on */}
+      {showSchemes && (
+        <Draggable id="legend-schemes" defaultPos={(w) => ({ top: w.innerHeight - 300, left: 20 })}>
+          <div className="bg-white/95 backdrop-blur rounded-lg shadow border border-gray-200 p-3 max-w-xs">
+            <div className="text-xs font-semibold text-gray-700 mb-2">Schemes</div>
+            <table className="w-full text-[11px] text-gray-800">
+              <tbody>
+                {CLAIM_FORM_TYPES.map((ft) => (
+                  <tr key={ft} className="align-middle">
+                    <td className="py-1 pr-2">
+                      <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: CLAIM_COLORS[ft] || '#666' }} />
+                    </td>
+                    <td className="py-1">
+                      <span className="truncate inline-block max-w-[220px]" title={ft}>{ft}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
