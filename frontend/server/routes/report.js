@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import puppeteer from 'puppeteer';
+import chromium from '@sparticuz/chromium';
 
 const router = Router();
 
@@ -29,6 +31,133 @@ router.get('/', async (req, res) => {
     }
   } catch (e) {
     return res.status(502).json({ error: e?.message || 'Failed to fetch report' });
+  }
+});
+
+// Lightweight server-side HTML fallback used by /pdf when Gemini HTML is unavailable
+function formatHtmlFallbackServer(json, ctx = {}) {
+  try {
+    const data = typeof json === 'object' ? json : JSON.parse(String(json || '{}'));
+    const aoi = data.aoi || {};
+    const meta = data.meta || {};
+    const ind = data.indicators || {};
+    const state = ctx.state || aoi.state || '—';
+    const district = ctx.district || aoi.district || '—';
+    const village = ctx.village || aoi.village || '—';
+    const areaRaw = aoi.area_sqkm ?? aoi.geographic_area_sqkm;
+    let areaTxt = '—';
+    if (typeof areaRaw === 'number') areaTxt = `${areaRaw.toFixed(2)} km²`;
+    else if (typeof areaRaw === 'string' && !isNaN(Number(areaRaw))) areaTxt = `${Number(areaRaw).toFixed(2)} km²`;
+
+    const pct = (v) => (v == null || isNaN(Number(v)) ? '—' : `${Number(v).toFixed(1)}%`);
+    const lulc = ind.lulc_pc || {};
+    const gw = ind.groundwater || ind.gw || {};
+    const mgnrega = ind.mgnrega || {};
+
+    const rows = [];
+    if (lulc.forest_percentage != null) rows.push(`<tr><td>Forest cover</td><td>${pct(lulc.forest_percentage)}</td></tr>`);
+    if (lulc.cropland_percentage != null) rows.push(`<tr><td>Cropland</td><td>${pct(lulc.cropland_percentage)}</td></tr>`);
+    if (lulc.builtup_percentage != null) rows.push(`<tr><td>Built-up</td><td>${pct(lulc.builtup_percentage)}</td></tr>`);
+    if (gw.pre_monsoon_depth_m != null) rows.push(`<tr><td>Pre-monsoon depth</td><td>${Number(gw.pre_monsoon_depth_m).toFixed(1)} m bgl</td></tr>`);
+    if (gw.seasonal_delta_m != null) rows.push(`<tr><td>Seasonal delta</td><td>${Number(gw.seasonal_delta_m).toFixed(1)} m</td></tr>`);
+    if (mgnrega.jobcard_issuance_pct != null) rows.push(`<tr><td>Jobcards issued</td><td>${pct(mgnrega.jobcard_issuance_pct)}</td></tr>`);
+    if (mgnrega.worker_activation_pct != null) rows.push(`<tr><td>Worker activation</td><td>${pct(mgnrega.worker_activation_pct)}</td></tr>`);
+    if (mgnrega.women_participation_pct != null) rows.push(`<tr><td>Women participation</td><td>${pct(mgnrega.women_participation_pct)}</td></tr>`);
+
+    const notes = Array.isArray(meta.notes) ? meta.notes : [];
+    const baseStyles = `
+      <style>
+        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #111827; }
+        h2 { font-size: 20px; margin: 0 0 8px; }
+        h3 { font-size: 16px; margin: 16px 0 8px; }
+        p { margin: 0 0 12px; color:#374151; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        td { border: 1px solid #e5e7eb; padding: 6px 8px; }
+      </style>`;
+
+    return `<!doctype html><html><head><meta charset="utf-8"/>${baseStyles}</head><body>
+      <section>
+        <h2>DSS Recommendations – ${village !== '—' ? village : (district !== '—' ? district : state)}, ${state}</h2>
+        <p>AOI: State ${state} · District ${district} · Village ${village} · Area ${areaTxt}</p>
+      </section>
+      <section>
+        <h3>Context Snapshot</h3>
+        <table>
+          <tbody>
+            ${rows.join('') || '<tr><td colspan="2">No key indicators available.</td></tr>'}
+          </tbody>
+        </table>
+        ${notes.length ? `<p>Notes: ${notes.join('; ')}</p>` : ''}
+      </section>
+    </body></html>`;
+  } catch {
+    return '<p>Unable to format report.</p>';
+  }
+}
+
+// Generate PDF for the current report
+router.post('/pdf', async (req, res) => {
+  const started = Date.now();
+  try {
+    const { data, context, html: htmlFromClient } = req.body || {};
+    if (!data && !htmlFromClient) return res.status(400).json({ error: 'Missing data or html' });
+
+    // Build HTML
+    let html = '';
+    if (typeof htmlFromClient === 'string' && htmlFromClient.trim()) {
+      html = htmlFromClient.trim();
+    } else if (data) {
+      try {
+        const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+        if (apiKey) {
+          const prompt = buildGeminiPrompt(data, context || {});
+          const modelId = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+          const genAI = new GoogleGenerativeAI(apiKey);
+          const model = genAI.getGenerativeModel({ model: modelId });
+          const resp = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }]}],
+            generationConfig: { temperature: 0.2, topP: 0.9, topK: 40, maxOutputTokens: 6000 }
+          });
+          html = resp?.response?.text?.() || resp?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        }
+      } catch {}
+      if (!html || !html.trim()) html = formatHtmlFallbackServer(data, context || {});
+    }
+    if (html.trim().startsWith('```')) html = html.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
+
+    // Launch Chromium (serverless-friendly if applicable)
+    const isServerless = !!(process.env.VERCEL || process.env.AWS_REGION || process.env.AWS_EXECUTION_ENV);
+    let browser;
+    if (isServerless) {
+      const puppeteerCore = (await import('puppeteer-core')).default;
+      const execPath = await chromium.executablePath();
+      browser = await puppeteerCore.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: execPath,
+        headless: chromium.headless,
+      });
+    } else {
+      browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    }
+
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '12mm', right: '12mm', bottom: '14mm', left: '12mm' } });
+    await page.close();
+    await browser.close();
+
+    const filenameBase = [context?.state, context?.district, context?.village].filter(Boolean).join('_') || 'dss_report';
+    const filename = `${filenameBase.replace(/\s+/g, '_').toLowerCase()}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(Buffer.from(pdfBuffer));
+  } catch (e) {
+    console.error('PDF generation failed:', e);
+    return res.status(500).json({ error: e?.message || 'Failed to generate PDF' });
+  } finally {
+    const ms = Date.now() - started;
+    if (ms > 10000) console.warn(`[report/pdf] slow generation: ${ms}ms`);
   }
 });
 

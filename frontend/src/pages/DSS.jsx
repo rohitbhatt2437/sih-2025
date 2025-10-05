@@ -18,6 +18,7 @@ export default function DSS() {
   const [reportError, setReportError] = useState('');
   const [reportData, setReportData] = useState(null); // { url, data, contentType }
   const [reportHtml, setReportHtml] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   // Selections
   const [stateSel, setStateSel] = useState('');
@@ -63,6 +64,33 @@ export default function DSS() {
     if (!resp.ok) throw new Error(`ArcGIS query failed: ${resp.status}`);
     const json = await resp.json();
     return json.features?.map((f) => f.attributes || {}) || [];
+  }
+
+  // Pretty loading UI for report panel
+  function ReportSkeleton() {
+    return (
+      <div className="animate-pulse space-y-4">
+        <div className="h-5 w-2/3 bg-gray-200 rounded" />
+        <div className="h-3 w-5/6 bg-gray-200 rounded" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="h-24 bg-gray-200 rounded" />
+          <div className="h-24 bg-gray-200 rounded" />
+        </div>
+        <div className="h-4 w-1/2 bg-gray-200 rounded" />
+        <div className="space-y-2">
+          <div className="h-3 w-full bg-gray-200 rounded" />
+          <div className="h-3 w-11/12 bg-gray-200 rounded" />
+          <div className="h-3 w-10/12 bg-gray-200 rounded" />
+        </div>
+        <div className="flex items-center gap-2 text-gray-500">
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+          </svg>
+          <span className="text-sm">Generating report…</span>
+        </div>
+      </div>
+    );
   }
 
   // Lightweight client-side fallback formatter in case Gemini formatter is unavailable
@@ -507,7 +535,7 @@ export default function DSS() {
               className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm shadow-sm disabled:opacity-50"
               disabled={reportLoading}
             >
-              {reportLoading ? 'Generating report…' : 'Fetch Data'}
+              {reportLoading ? 'Generating report…' : 'Get Report'}
             </button>
           </div>
           {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
@@ -520,17 +548,55 @@ export default function DSS() {
       <div className="hidden lg:flex flex-1 bg-white rounded-lg shadow-sm border border-gray-100 p-0 overflow-hidden flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <h4 className="text-base font-semibold text-gray-900">Report</h4>
-          {reportData?.url && (
-            <a href={reportData.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">Open in new tab</a>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                if (!stateSel) return;
+                if (!reportData) return;
+                try {
+                  setPdfLoading(true);
+                  const payload = {
+                    html: reportHtml && reportHtml.trim() ? reportHtml : undefined,
+                    data: (!reportHtml || !reportHtml.trim()) ? reportData.data : undefined,
+                    context: { state: stateSel, district: districtSel, village: villageSel }
+                  };
+                  const resp = await fetch(`${baseUrl}/api/report/pdf`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                  });
+                  if (!resp.ok) {
+                    const t = await resp.text();
+                    throw new Error(`PDF failed: ${resp.status} ${t?.slice(0,200)}`);
+                  }
+                  const blob = await resp.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  const filename = [stateSel, districtSel, villageSel].filter(Boolean).join('_').replace(/\s+/g,'_').toLowerCase() || 'dss_report';
+                  a.href = url;
+                  a.download = `${filename}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  window.URL.revokeObjectURL(url);
+                } catch (e) {
+                  setReportError(e?.message || 'Failed to download PDF');
+                } finally {
+                  setPdfLoading(false);
+                }
+              }}
+              disabled={!reportData || pdfLoading || reportLoading}
+              className="px-2.5 py-1.5 rounded-md text-xs bg-emerald-600 text-white disabled:opacity-50"
+            >
+              {pdfLoading ? 'Preparing PDF…' : 'Download PDF'}
+            </button>
+          </div>
         </div>
         <div className="p-4 overflow-y-auto h-[710px]">
           {!stateSel && (
             <div className="text-sm text-gray-600">Select at least a State and click "Fetch Data".</div>
           )}
-          {reportLoading && (
-            <div className="text-sm text-gray-600">Fetching report…</div>
-          )}
+          {reportLoading && (<ReportSkeleton />)}
           {reportError && (
             <div className="text-sm text-red-600">{reportError}</div>
           )}
