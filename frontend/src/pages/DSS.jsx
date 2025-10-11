@@ -213,11 +213,11 @@ export default function DSS() {
         <style>
           :root{--muted:#6b7280;--accent:#0b5cff}
           body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#111827;margin:0}
-          .container{max-width:980px;margin:12px auto;padding:18px}
+          .container{max-width:980px ;margin:12px auto;padding:18px}
           header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid #eef2f7;padding-bottom:10px}
           header h1{font-size:18px;margin:0}
           header .meta{font-size:12px;color:var(--muted)}
-          .grid{display:block;margin-top:18px}
+          .report-grid{display:block;margin-top:18px}
           .section{margin-bottom:12px}
           .heading{font-size:14px;font-weight:700;color:#0b376b;margin-bottom:8px}
           .sub{font-size:13px;font-weight:600;color:#1f2937;margin-bottom:6px}
@@ -227,7 +227,7 @@ export default function DSS() {
           table td, table th{border:1px solid #eef2f7;padding:6px 8px}
           .small{font-size:12px;color:var(--muted)}
           a.source{color:var(--accent);text-decoration:none}
-          @media print{ .grid{grid-template-columns:1fr 320px} }
+          @media print{ .report-grid{grid-template-columns:1fr 320px} }
         </style>`;
 
       const bullets = [];
@@ -286,94 +286,95 @@ export default function DSS() {
         ${styles}
         <div class="container">
           <header>
-            <div>
-              <h1>DSS Recommendations – ${escapeHtml(village !== '—' ? village : (district !== '—' ? district : state))}, ${escapeHtml(state)}</h1>
-              <div class="meta small">Date: ${escapeHtml((meta.generated_at || new Date().toISOString()).slice(0, 10))}</div>
-            </div>
-            <div class="small">Area: ${escapeHtml(areaTxt)}</div>
+        <div>
+          <h1>DSS Recommendations – ${escapeHtml(village !== '—' ? village : (district !== '—' ? district : state))}, ${escapeHtml(state)}</h1>
+          <div class="meta small">Date: ${escapeHtml((meta.generated_at || new Date().toISOString()).slice(0, 10))}</div>
+        </div>
+        <div class="small">Area: ${escapeHtml(areaTxt)}</div>
           </header>
-          <div class="grid">
-            <main>
-              <div class="card">
-                <h3 class="small">A. Header</h3>
-                <p class="small">AOI: District: ${escapeHtml(district)}, State: ${escapeHtml(state)}</p>
-                ${(aoi.centroid_lat != null && aoi.centroid_lon != null) ? `<p class="small">Centroid: ${Number(aoi.centroid_lat).toFixed(5)}, ${Number(aoi.centroid_lon).toFixed(5)}</p>` : ''}
-              </div>
-              <div class="card" style="margin-top:10px">
-                <h3 class="small">B. Executive Summary</h3>
-                <ul class="bullets">${bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
-              </div>
-              <div class="card" style="margin-top:10px">
-                <h3 class="small">C. Context Snapshot</h3>
-                <div>${rows.length ? `<table>${rows.join('')}</table>` : 'No key indicators available.'}</div>
-                ${notes.length ? `<div class="small">${notes.map(n => escapeHtml(n)).join('<br/>')}</div>` : ''}
-              </div>
-              <div class="card" style="margin-top:10px">
-                <h3 class="small">D. Scheme Recommendations</h3>
-                <div class="small">
-                  <h4 style="margin:6px 0 4px">Jal Jeevan Mission (JJM)</h4>
-                  <p><strong>Focus:</strong> Functional Household Tap Connections (FHTC) & Source Sustainability</p>
-                  <p class="small"><strong>Why:</strong> ${escapeHtml(gwCategory || '—')}${delta != null ? `, seasonal delta ${escapeHtml(fix(delta, 2))} m` : ''} — even where groundwater is currently classified as safe, declining seasonal trends indicate the need for proactive measures to secure drinking-water sources.</p>
-                  <p class="small"><strong>What:</strong> Prioritize universal FHTC coverage; combine this with on-the-ground source-sustainability works such as check dams, percolation tanks, contour bunding, farm ponds, and targeted recharge interventions. Encourage household- and community-level rainwater harvesting.</p>
-                  <p class="small"><strong>Where / How:</strong> Use topographic maps, hydrological flow-paths and existing waterbody layers to site recharge works in upper catchments and near habitations—prioritise areas showing larger seasonal declines or low FHTC coverage.</p>
-                  <p class="small"><strong>Caveats:</strong> Shallow or shale aquifers may show slower recharge; pair recharge works with demand-management (efficiency, leak reduction) and surface-water options where appropriate.</p>
-                </div>
-                <div class="small" style="margin-top:8px">
-                  <h4 style="margin:6px 0 4px">MGNREGA</h4>
-                  <p class="small"><strong>Focus:</strong> Natural Resource Management (NRM) & Livelihood Enhancement</p>
-                  <p class="small"><strong>Why:</strong> High job-card issuance and worker activation, together with significant women's participation and substantial forest cover, make MGNREGA a suitable delivery platform for large-scale NRM works.</p>
-                  <p class="small"><strong>What:</strong> Prioritise NRM activities — afforestation, soil & moisture conservation (farm ponds, trenches), and construction of water-harvesting and recharge structures. Link these works with livelihood activities (horticulture, agroforestry, NTFP value-addition).</p>
-                  <p class="small"><strong>Where / How:</strong> Target degraded forest patches, erosion-prone agricultural lands, and catchment areas identified from LULC maps, watershed boundaries, and village plans. Prioritise works that benefit marginalized groups including SC/ST households.</p>
-                  <p class="small"><strong>Caveats:</strong> Ensure works are demand-driven, quality-checked and accompanied by timely wage payments to sustain participation and produce long-lasting assets.</p>
-                </div>
-                <div class="small" style="margin-top:8px">
-                  <h4 style="margin:6px 0 4px">DA-JGUA (Development of Adivasi & Janjatiya Gram Udyog Abhiyan)</h4>
-                  <p class="small"><strong>Focus:</strong> FRA strengthening, TMMC feasibility and SCD/education outreach</p>
-                  <p class="small"><strong>Why:</strong> High forest cover and a substantial Scheduled Tribe population create both a need and opportunity to secure forest rights and promote forest-linked livelihoods.</p>
-                  <p class="small"><strong>What:</strong> Intensify FRA implementation (IFR & CFR), carry out feasibility studies for Tribal Minor Mineral Concessions (TMMC) where geologically appropriate, and run targeted SCD/educational outreach to improve access and uptake of development programs.</p>
-                  <p class="small"><strong>Where / How:</strong> Use forest boundary maps, habitation layers and traditional knowledge to identify CFR/IFR opportunities; consult geological maps for TMMC scoping; and plan outreach in tribal-dominated blocks and habitations.</p>
-                  <p class="small"><strong>Caveats:</strong> FRA processes must be participatory and rights-respecting; TMMC requires strict environmental safeguards and benefit-sharing to avoid exploitation.</p>
-                </div>
-              </div>
-            </main>
-            <!-- Inline sections previously in aside; moved into the main single-column flow -->
-            <section class="section">
-              <div class="card">
-                <div class="heading">E. Implementation & Convergence</div>
-                <div class="small">
-                  <p>Effective implementation requires strong inter-departmental convergence, clear leads and integrated planning at district and block levels. Below we outline recommended sectoral leads, convergence actions and operational guidance.</p>
+          <div class="report-grid">
+        <main>
+          <div class="card">
+            <div class="heading">A. Header</div>
+            <p class="small">AOI: District: ${escapeHtml(district)}, State: ${escapeHtml(state)}</p>
+            ${(aoi.centroid_lat != null && aoi.centroid_lon != null) ? `<p class="small">Centroid: ${Number(aoi.centroid_lat).toFixed(5)}, ${Number(aoi.centroid_lon).toFixed(5)}</p>` : ''}
+          </div>
+          <div class="card" style="margin-top:10px">
+            <div class="heading">B. Executive Summary</div>
+            <ul class="bullets">${bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+          </div>
+          <div class="card" style="margin-top:10px">
+            <div class="heading">C. Context Snapshot</div>
+            <div>${rows.length ? `<table>${rows.join('')}</table>` : 'No key indicators available.'}</div>
+            ${notes.length ? `<div class="small">${notes.map(n => escapeHtml(n)).join('<br/>')}</div>` : ''}
+          </div>
+          <div class="card" style="margin-top:10px">
+            <div class="heading">D. Scheme Recommendations</div>
+            <div class="small">
+          <div class="sub" style="margin:6px 0 2px">Jal Jeevan Mission (JJM)</div>
+          <p><strong>Focus:</strong> Functional Household Tap Connections (FHTC) & Source Sustainability</p>
+          <p class="small"><strong>Why:</strong> ${escapeHtml(gwCategory || '—')}${delta != null ? `, seasonal delta ${escapeHtml(fix(delta, 2))} m` : ''} — even where groundwater is currently classified as safe, declining seasonal trends indicate the need for proactive measures to secure drinking-water sources.</p>
+          <p class="small"><strong>What:</strong> Prioritize universal FHTC coverage; combine this with on-the-ground source-sustainability works such as check dams, percolation tanks, contour bunding, farm ponds, and targeted recharge interventions. Encourage household- and community-level rainwater harvesting.</p>
+          <p class="small"><strong>Where / How:</strong> Use topographic maps, hydrological flow-paths and existing waterbody layers to site recharge works in upper catchments and near habitations—prioritise areas showing larger seasonal declines or low FHTC coverage.</p>
+          <p class="small"><strong>Caveats:</strong> Shallow or shale aquifers may show slower recharge; pair recharge works with demand-management (efficiency, leak reduction) and surface-water options where appropriate.</p>
+            </div>
+            
+            <div style="margin-top:8px">
+          <div class="sub" style="margin:6px 0 2px">MGNREGA</div>
+          <p class="small"><strong>Focus:</strong> Natural Resource Management (NRM) & Livelihood Enhancement</p>
+          <p class="small"><strong>Why:</strong> High job-card issuance and worker activation, together with significant women's participation and substantial forest cover, make MGNREGA a suitable delivery platform for large-scale NRM works.</p>
+          <p class="small"><strong>What:</strong> Prioritise NRM activities — afforestation, soil & moisture conservation (farm ponds, trenches), and construction of water-harvesting and recharge structures. Link these works with livelihood activities (horticulture, agroforestry, NTFP value-addition).</p>
+          <p class="small"><strong>Where / How:</strong> Target degraded forest patches, erosion-prone agricultural lands, and catchment areas identified from LULC maps, watershed boundaries, and village plans. Prioritise works that benefit marginalized groups including SC/ST households.</p>
+          <p class="small"><strong>Caveats:</strong> Ensure works are demand-driven, quality-checked and accompanied by timely wage payments to sustain participation and produce long-lasting assets.</p>
+            </div>
+            <div class="small" style="margin-top:8px">
+          <div class="sub" style="margin:6px 0 2px">DA-JGUA (Development of Adivasi & Janjatiya Gram Udyog Abhiyan)</div>
+          <p class="small"><strong>Focus:</strong> FRA strengthening, TMMC feasibility and SCD/education outreach</p>
+          <p class="small"><strong>Why:</strong> High forest cover and a substantial Scheduled Tribe population create both a need and opportunity to secure forest rights and promote forest-linked livelihoods.</p>
+          <p class="small"><strong>What:</strong> Intensify FRA implementation (IFR & CFR), carry out feasibility studies for Tribal Minor Mineral Concessions (TMMC) where geologically appropriate, and run targeted SCD/educational outreach to improve access and uptake of development programs.</p>
+          <p class="small"><strong>Where / How:</strong> Use forest boundary maps, habitation layers and traditional knowledge to identify CFR/IFR opportunities; consult geological maps for TMMC scoping; and plan outreach in tribal-dominated blocks and habitations.</p>
+          <p class="small"><strong>Caveats:</strong> FRA processes must be participatory and rights-respecting; TMMC requires strict environmental safeguards and benefit-sharing to avoid exploitation.</p>
+            </div>
+          </div>
+        </main>
+      
+        <section class="section">
+          <div class="card">
+            <div class="heading">E. Implementation & Convergence</div>
+            <div class="small">
+          <p>Effective implementation requires strong inter-departmental convergence, clear leads and integrated planning at district and block levels. Below we outline recommended sectoral leads, convergence actions and operational guidance.</p>
 
-                  <div class="sub">JJM (Lead: Public Health Engineering / Rural Water Supply)</div>
-                  <p class="small"><strong>Convergence actions:</strong> Work with MGNREGA for earthworks, desilting and construction of recharge structures; coordinate with Forest Department/CAMPA for planting and catchment protection around sources; partner with Panchayati Raj Institutions for community mobilisation, operation & maintenance, and behaviour-change campaigns to promote water conservation.</p>
-                  <p class="small"><strong>Operational guidance:</strong> Prepare village-level water security plans that map FHTC gaps, source vulnerability and priority recharge sites. Use MGNREGA funds for labor-intensive earthworks while assigning O&M responsibilities to local institutions.</p>
+          <div class="sub" style="margin:6px 0 2px">JJM (Lead: Public Health Engineering / Rural Water Supply)</div>
+          <p class="small"><strong>Convergence actions:</strong> Work with MGNREGA for earthworks, desilting and construction of recharge structures; coordinate with Forest Department/CAMPA for planting and catchment protection around sources; partner with Panchayati Raj Institutions for community mobilisation, operation & maintenance, and behaviour-change campaigns to promote water conservation.</p>
+          <p class="small"><strong>Operational guidance:</strong> Prepare village-level water security plans that map FHTC gaps, source vulnerability and priority recharge sites. Use MGNREGA funds for labor-intensive earthworks while assigning O&M responsibilities to local institutions.</p>
 
-                  <div class="sub">MGNREGA (Lead: Rural Development Department)</div>
-                  <p class="small"><strong>Convergence actions:</strong> Coordinate with Forest Department for afforestation and forest protection works; with Agriculture for soil & moisture conservation and farm-ponds; with Water Resources for larger structures and watershed development; and with Tribal Welfare to ensure works reach tribal communities.</p>
-                  <p class="small"><strong>Operational guidance:</strong> Prioritise high-impact NRM packages that combine watershed works with livelihood components (horticulture, agroforestry). Ensure quality monitoring, geotagging of assets and timely wage payments to maintain participation.</p>
+          <div class="sub" style="margin:6px 0 2px">MGNREGA (Lead: Rural Development Department)</div>
+          <p class="small"><strong>Convergence actions:</strong> Coordinate with Forest Department for afforestation and forest protection works; with Agriculture for soil & moisture conservation and farm-ponds; with Water Resources for larger structures and watershed development; and with Tribal Welfare to ensure works reach tribal communities.</p>
+          <p class="small"><strong>Operational guidance:</strong> Prioritise high-impact NRM packages that combine watershed works with livelihood components (horticulture, agroforestry). Ensure quality monitoring, geotagging of assets and timely wage payments to maintain participation.</p>
 
-                  <div class="sub">DA-JGUA (Lead: Tribal Welfare Department)</div>
-                  <p class="small"><strong>Convergence actions:</strong> Work with Forest Department for joint verification and CFR/IFR processing; collaborate with Mines & Geology for TMMC feasibility and compliance; partner with Education for targeted outreach and scholarships; and link with Skill Development for vocational training tied to local resources.</p>
-                  <p class="small"><strong>Operational guidance:</strong> Conduct participatory mapping of forest-dwelling habitations, hold awareness camps for FRA claims, and ensure environmental impact assessments and equitable benefit-sharing for any mineral concessions.</p>
+          <div class="sub" style="margin:6px 0 2px">DA-JGUA (Lead: Tribal Welfare Department)</div>
+          <p class="small"><strong>Convergence actions:</strong> Work with Forest Department for joint verification and CFR/IFR processing; collaborate with Mines & Geology for TMMC feasibility and compliance; partner with Education for targeted outreach and scholarships; and link with Skill Development for vocational training tied to local resources.</p>
+          <p class="small"><strong>Operational guidance:</strong> Conduct participatory mapping of forest-dwelling habitations, hold awareness camps for FRA claims, and ensure environmental impact assessments and equitable benefit-sharing for any mineral concessions.</p>
 
-                  <div class="sub">Cross-cutting recommendations</div>
-                  <ul class="bullets">
-                    <li>Establish district-level convergence committees with nominated leads from each department and clear reporting lines.</li>
-                    <li>Use GIS-driven prioritisation (LULC, watershed boundaries, habitations, service coverage) to allocate resources efficiently.</li>
-                    <li>Institutionalise community participation (Panchayats, user groups) for O&M and local monitoring.</li>
-                    <li>Ensure safeguards: environmental assessments for extractive proposals, gender- and social-inclusion checks, and transparent benefit-sharing mechanisms.</li>
-                  </ul>
-                </div>
-              </div>
-            </section>
-            <section class="section">
-              <div class="card">
-                <div class="heading">F. Annexure</div>
-                ${annex}
-              </div>
-            </section>
-            <section class="section">
-              ${sourceListHtml}
-            </section>
+          <div class="sub">Cross-cutting recommendations</div>
+          <ul class="bullets">
+            <li>Establish district-level convergence committees with nominated leads from each department and clear reporting lines.</li>
+            <li>Use GIS-driven prioritisation (LULC, watershed boundaries, habitations, service coverage) to allocate resources efficiently.</li>
+            <li>Institutionalise community participation (Panchayats, user groups) for O&M and local monitoring.</li>
+            <li>Ensure safeguards: environmental assessments for extractive proposals, gender- and social-inclusion checks, and transparent benefit-sharing mechanisms.</li>
+          </ul>
+            </div>
+          </div>
+        </section>
+        <section class="section">
+          <div class="card">
+            <div class="heading">F. Annexure</div>
+            ${annex}
+          </div>
+        </section>
+        <section class="section">
+          ${sourceListHtml}
+        </section>
           </div>
           </div>
         </div>`;
@@ -897,7 +898,7 @@ export default function DSS() {
               disabled={!reportData || pdfLoading || reportLoading}
               className="px-2.5 py-1.5 rounded-md text-xs bg-emerald-600 text-white disabled:opacity-50"
             >
-              {pdfLoading ? 'Preparing PDF��' : 'Download PDF'}
+              {pdfLoading ? 'Preparing PDF' : 'Download PDF'}
             </button>
           </div>
         </div>
