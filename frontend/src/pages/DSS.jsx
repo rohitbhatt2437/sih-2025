@@ -879,16 +879,54 @@ export default function DSS() {
                     const t = await resp.text();
                     throw new Error(`PDF failed: ${resp.status} ${t?.slice(0, 200)}`);
                   }
-                  const blob = await resp.blob();
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
+
+                  const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+                  const xPdf = (resp.headers.get('x-pdf-generation') || '').toLowerCase();
                   const filename = [stateSel, districtSel, villageSel].filter(Boolean).join('_').replace(/\s+/g, '_').toLowerCase() || 'dss_report';
-                  a.href = url;
-                  a.download = `${filename}.pdf`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                  window.URL.revokeObjectURL(url);
+
+                  if (contentType.includes('application/pdf')) {
+                    const blob = await resp.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${filename}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                  } else if (contentType.includes('text/html') || xPdf === 'unavailable') {
+                    // Server returned HTML fallback — open in new tab so user can Print → Save as PDF
+                    const html = await resp.text();
+                    const win = window.open('', '_blank');
+                    if (win) {
+                      win.document.open();
+                      win.document.write(html);
+                      win.document.close();
+                      try { win.focus(); } catch (e) {}
+                    } else {
+                      // Fallback: download HTML file
+                      const blob = new Blob([html], { type: 'text/html' });
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${filename}.html`;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      window.URL.revokeObjectURL(url);
+                    }
+                  } else {
+                    // Unknown content — download as blob and let user inspect
+                    const blob = await resp.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${filename}.bin`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                  }
                 } catch (e) {
                   setReportError(e?.message || 'Failed to download PDF');
                 } finally {

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import puppeteer from 'puppeteer';
-import chromium from '@sparticuz/chromium';
+// NOTE: puppeteer and serverless chromium are imported dynamically inside the /pdf handler
+// to avoid ESM import-time crashes when the packages are not installed in a dev environment.
 
 // Simple in-memory cache for upstream report responses (avoid refetch churn)
 // Keyed by state|district|village. Each entry: { ts, status, contentType, body, isJson }
@@ -476,27 +476,71 @@ router.post('/pdf', async (req, res) => {
     }
     if (html.trim().startsWith('```')) html = html.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
 
-    // Launch Chromium (serverless-friendly if applicable)
+    // Attempt PDF generation using a best-effort sequence of strategies.
+    // We dynamically import packages so missing deps don't crash the server on import.
     const isServerless = !!(process.env.VERCEL || process.env.AWS_REGION || process.env.AWS_EXECUTION_ENV);
-    let browser;
-    if (isServerless) {
-      const puppeteerCore = (await import('puppeteer-core')).default;
-      const execPath = await chromium.executablePath();
-      browser = await puppeteerCore.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: execPath,
-        headless: chromium.headless,
-      });
-    } else {
-      browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    let browser = null;
+    let pdfBuffer = null;
+    let lastError = null;
+
+    // Helper to try launching with provided launcher function
+    async function tryLaunch(launchFn) {
+      try {
+        const b = await launchFn();
+        return b;
+      } catch (err) {
+        lastError = err;
+        return null;
+      }
     }
 
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '12mm', right: '12mm', bottom: '14mm', left: '12mm' } });
-    await page.close();
-    await browser.close();
+    // Strategy 1: puppeteer-core + @sparticuz/chromium (serverless-friendly)
+    if (!browser) {
+      try {
+        const puppeteerCore = (await import('puppeteer-core')).default;
+        const spart = await import('@sparticuz/chromium');
+        const execPath = await spart.executablePath();
+        browser = await tryLaunch(() => puppeteerCore.launch({ args: spart.args || ['--no-sandbox', '--disable-setuid-sandbox'], executablePath: execPath, headless: spart.headless ?? true, defaultViewport: spart.defaultViewport }));
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    // Strategy 2: puppeteer-core + chrome-aws-lambda
+    if (!browser) {
+      try {
+        const puppeteerCore = (await import('puppeteer-core')).default;
+        const cal = await import('chrome-aws-lambda');
+        const execPath = cal.executablePath;
+        browser = await tryLaunch(() => puppeteerCore.launch({ args: cal.args || ['--no-sandbox', '--disable-setuid-sandbox'], executablePath: execPath, headless: cal.headless ?? true, defaultViewport: cal.defaultViewport }));
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    // Strategy 3: installed puppeteer (fallback)
+    if (!browser) {
+      try {
+        const puppeteerPkg = await import('puppeteer');
+        const puppeteer = puppeteerPkg.default || puppeteerPkg;
+        browser = await tryLaunch(() => puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] }));
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (browser) {
+      try {
+        const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '12mm', right: '12mm', bottom: '14mm', left: '12mm' } });
+        try { await page.close(); } catch (e) {}
+        try { await browser.close(); } catch (e) {}
+      } catch (err) {
+        lastError = err;
+        try { if (browser && browser.close) await browser.close(); } catch (e) {}
+      }
+    }
 
     const filenameBase = [context?.state, context?.district, context?.village].filter(Boolean).join('_') || 'dss_report';
     const filename = `${filenameBase.replace(/\s+/g, '_').toLowerCase()}.pdf`;
