@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { addArcGISFeatureLayer } from '../utils/mapLayers';
@@ -147,11 +147,281 @@ export default function DSS() {
     }
   }
 
+  // Deterministic report builder that follows our sectioned layout (A–F)
+  // client helper mappings for nicer data source labels
+  const DATA_SOURCE_LABELS = {
+    'services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/state_boundary': 'State boundary (FeatureServer)',
+    'services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/district_boundary': 'District boundary (FeatureServer)',
+    'livingatlas.esri.in/server/rest/services/IAB2024/IAB_Village_2024': 'Village (IAB2024) MapServer',
+    'livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/1': 'Groundwater Pre-monsoon (FeatureServer/1)',
+    'livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/2': 'Groundwater During-monsoon (FeatureServer/2)',
+    'livingatlas.esri.in/server1/rest/services/Water/Pre_Post_Monsoon_Water_Level_Depth/FeatureServer/3': 'Groundwater Post-monsoon (FeatureServer/3)'
+  };
+  const SHORT_SOURCE_LABELS = {
+    state: 'State boundary', district: 'District boundary', village: 'Village (IAB2024)',
+    groundwater_pre_monsoon: 'Groundwater (Pre-monsoon)', groundwater_during_monsoon: 'Groundwater (During-monsoon)',
+    groundwater_post_monsoon: 'Groundwater (Post-monsoon)', aquifer: 'Aquifer', rural_facilities: 'PMGSY Rural Facilities',
+    mgnrega_workers: 'MGNREGA workers'
+  };
+
+  function escapeHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function findLabelForUrl(u) {
+    try { const s = String(u||''); const key = Object.keys(DATA_SOURCE_LABELS).find(k=>s.includes(k)); if (key) return DATA_SOURCE_LABELS[key]; const url = new URL(s); const parts = url.pathname.split('/').filter(Boolean); if (parts.length>=2) return parts.slice(-2).join('/'); return url.hostname; } catch { return String(u||'').slice(0,60); }
+  }
+  function normalizeSourceEntry(entry) {
+    if (entry == null) return { label:'', url:'', raw:'' };
+    if (typeof entry === 'object') { const keys = Object.keys(entry); if (keys.length===1 && typeof entry[keys[0]]==='string') { const k = keys[0]; const url = entry[k]; const label = SHORT_SOURCE_LABELS[k] || (k.charAt(0).toUpperCase()+k.slice(1)); return { label, url, raw: url }; } const url = entry.url || entry.link || entry.source || null; const label = entry.label || entry.name || (url?findLabelForUrl(url):JSON.stringify(entry)); return { label, url, raw: url||JSON.stringify(entry) }; }
+    const s = String(entry).trim(); const kv = s.match(/^([a-zA-Z0-9_\-]+)\s*:\s*(https?:\/\/\S+)$/i) || s.match(/^([a-zA-Z0-9_\-]+)\s*:\s*(\S+)$/i);
+    if (kv) { const key = kv[1]; const val = kv[2]; const label = SHORT_SOURCE_LABELS[key] || key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); return { label, url: val, raw: val }; }
+    if (/^https?:\/\//i.test(s)) return { label: findLabelForUrl(s), url: s, raw: s };
+    return { label: s, url:'', raw: s };
+  }
+
+  function renderDeterministicReport(json, ctx = {}) {
+    try {
+      const data = typeof json === 'object' ? json : JSON.parse(String(json || '{}'));
+      const aoi = data.aoi || {};
+      const meta = data.meta || {};
+      const ind = data.indicators || {};
+      const state = (ctx.state || aoi.state || '').trim() || '—';
+      const district = (ctx.district || aoi.district || '').trim() || '—';
+      const village = (ctx.village || aoi.village || '').trim() || '—';
+
+      const rawArea = aoi.area_sqkm ?? aoi.geographic_area_sqkm ?? aoi?.additional_attributes?.area_sqkm;
+      let areaKm2 = null; if (typeof rawArea === 'number') areaKm2 = rawArea > 1e7 ? rawArea/1e6 : rawArea; else if (typeof rawArea === 'string' && !isNaN(Number(rawArea))) { const n = Number(rawArea); areaKm2 = n>1e7 ? n/1e6 : n; }
+      const areaTxt = areaKm2 != null ? `${areaKm2.toFixed(2)} km²` : '—';
+
+      const pct=(v,d=2)=>(v==null||isNaN(Number(v))?'—':`${Number(v).toFixed(d)}%`);
+      const num=(v)=>(v==null||isNaN(Number(v))?'—':Number(v).toLocaleString('en-IN'));
+      const fix=(v,d=2)=>(v==null||isNaN(Number(v))?'—':Number(v).toFixed(d));
+
+      const lulc = ind.lulc_pc || ind.lulc || {};
+      const gw = ind.gw || ind.groundwater || {};
+      const aquifer = ind.aquifer || {};
+      const mgn = ind.mgnrega || {};
+
+      const forestPct = lulc.forest_percentage;
+      const preDepth = gw.pre_monsoon_depth_m ?? gw.district_pre2019_m;
+      const delta = gw.seasonal_delta_m ?? gw.pre_post_delta_m;
+      const gwCategory = gw.category;
+      const aquiferType = aquifer.type;
+      const issuance = mgn.jobcard_issuance_pct ?? mgn.jobcard_issuance_rate_pc;
+      const activation = mgn.worker_activation_pct ?? mgn.worker_activation_rate_pc;
+      const women = mgn.women_participation_pct ?? mgn.women_participation_pc;
+
+      const styles = `
+        <style>
+          :root{--muted:#6b7280;--accent:#0b5cff}
+          body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#111827;margin:0}
+          .container{max-width:980px;margin:12px auto;padding:18px}
+          header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid #eef2f7;padding-bottom:10px}
+          header h1{font-size:18px;margin:0}
+          header .meta{font-size:12px;color:var(--muted)}
+          .grid{display:grid;grid-template-columns:1fr 320px;gap:14px;margin-top:12px}
+          .card{padding:12px;border:1px solid #f1f5f9;border-radius:6px;background:#fff}
+          .bullets{padding-left:18px;margin:8px 0}
+          table{width:100%;border-collapse:collapse;font-size:13px}
+          table td, table th{border:1px solid #eef2f7;padding:6px 8px}
+          .small{font-size:12px;color:var(--muted)}
+          a.source{color:var(--accent);text-decoration:none}
+          @media print{ .grid{grid-template-columns:1fr 320px} }
+        </style>`;
+
+      const bullets = [];
+      bullets.push(`Jal Jeevan Mission (JJM): Despite a "${gwCategory||'—'}" groundwater category, ${delta!=null?`a ${Number(delta)<0?'decline':'rise'} in seasonal groundwater levels (${fix(delta,2)} m)`:'seasonal variation'} necessitates strong source sustainability along with FHTC coverage.`);
+      bullets.push(`MGNREGA: Leverage job card issuance ${pct(issuance)}, worker activation ${pct(activation)}, and women participation ${pct(women)} to deliver NRM works (afforestation, water harvesting).`);
+      bullets.push(`DA-JGUA: With forest cover ${forestPct!=null?pct(forestPct):'—'}, strengthen FRA, assess TMMC and expand SCD/Education outreach.`);
+      if (delta!=null) bullets.push(`Groundwater Management: Address seasonal delta ${fix(delta,2)} m via rainwater harvesting and artificial recharge; tailor to ${aquiferType||'local aquifer'} conditions.`);
+
+      const rows = [];
+      if (forestPct!=null) rows.push(`<tr><td>Forest Cover</td><td>${pct(forestPct,2)}</td></tr>`);
+      if (lulc.cropland_percentage!=null) rows.push(`<tr><td>Cropland</td><td>${pct(lulc.cropland_percentage,2)}</td></tr>`);
+      if (lulc.builtup_percentage!=null) rows.push(`<tr><td>Built-up Area</td><td>${pct(lulc.builtup_percentage,2)}</td></tr>`);
+      if (preDepth!=null) rows.push(`<tr><td>Pre-Monsoon Depth</td><td>${fix(preDepth,2)} m</td></tr>`);
+      if (delta!=null) rows.push(`<tr><td>Seasonal Delta</td><td>${fix(delta,2)} m</td></tr>`);
+      if (gwCategory) rows.push(`<tr><td>Groundwater Category</td><td>${escapeHtml(gwCategory)}</td></tr>`);
+      if (aquiferType) rows.push(`<tr><td>Aquifer Type</td><td>${escapeHtml(aquiferType)}</td></tr>`);
+      if (issuance!=null) rows.push(`<tr><td>Job Card Issuance Rate</td><td>${pct(issuance,2)}</td></tr>`);
+      if (activation!=null) rows.push(`<tr><td>Worker Activation Rate</td><td>${pct(activation,2)}</td></tr>`);
+      if (women!=null) rows.push(`<tr><td>Women Participation</td><td>${pct(women,2)}</td></tr>`);
+      if (mgn.jobcards_issued!=null) rows.push(`<tr><td>Job Cards Issued</td><td>${num(mgn.jobcards_issued)}</td></tr>`);
+      if (mgn.active_workers_total!=null) rows.push(`<tr><td>Active Workers</td><td>${num(mgn.active_workers_total)}</td></tr>`);
+      if (mgn.active_workers_women!=null) rows.push(`<tr><td>Active Women Workers</td><td>${num(mgn.active_workers_women)}</td></tr>`);
+
+      const notes = Array.isArray(meta.notes)?meta.notes:[];
+      const sources = Array.isArray(meta.data_sources)?meta.data_sources:[];
+
+      const annex = `
+        <table>
+          <thead><tr><th>Indicator</th><th>Value</th><th>Unit</th></tr></thead>
+          <tbody>
+            ${forestPct!=null?`<tr><td>Forest Cover</td><td>${fix(forestPct,2)}</td><td>%</td></tr>`:''}
+            ${preDepth!=null?`<tr><td>Groundwater Pre‑Monsoon Depth</td><td>${fix(preDepth,2)}</td><td>m</td></tr>`:''}
+            ${delta!=null?`<tr><td>Groundwater Seasonal Delta</td><td>${fix(delta,2)}</td><td>m</td></tr>`:''}
+            ${gwCategory?`<tr><td>Groundwater Category</td><td>${escapeHtml(gwCategory)}</td><td>—</td></tr>`:''}
+            ${aquiferType?`<tr><td>Aquifer Type</td><td>${escapeHtml(aquiferType)}</td><td>—</td></tr>`:''}
+            ${issuance!=null?`<tr><td>MGNREGA Job Card Issuance Rate</td><td>${fix(issuance,2)}</td><td>%</td></tr>`:''}
+            ${activation!=null?`<tr><td>MGNREGA Worker Activation Rate</td><td>${fix(activation,2)}</td><td>%</td></tr>`:''}
+            ${women!=null?`<tr><td>MGNREGA Women Participation</td><td>${fix(women,2)}</td><td>%</td></tr>`:''}
+            ${mgn.jobcards_issued!=null?`<tr><td>MGNREGA Job Cards Issued</td><td>${num(mgn.jobcards_issued)}</td><td>—</td></tr>`:''}
+            ${mgn.active_workers_total!=null?`<tr><td>MGNREGA Active Workers</td><td>${num(mgn.active_workers_total)}</td><td>—</td></tr>`:''}
+            ${mgn.active_workers_women!=null?`<tr><td>MGNREGA Active Women Workers</td><td>${num(mgn.active_workers_women)}</td><td>—</td></tr>`:''}
+          </tbody>
+        </table>`;
+
+      const sourceListHtml = (() => {
+        if (!sources || !sources.length) return '<p class="small">Data sources not provided.</p>';
+        const items = sources.map(s => {
+          const n = normalizeSourceEntry(s);
+          if (n.url) return `<li><a class="source" href="${escapeHtml(n.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(n.label || findLabelForUrl(n.url))}</a></li>`;
+          return `<li>${escapeHtml(n.label || n.raw)}</li>`;
+        });
+        return `<div class="card"><h3 class="small">Data Sources</h3><ul>${items.join('')}</ul></div>`;
+      })();
+
+      return `
+        ${styles}
+        <div class="container">
+          <header>
+            <div>
+              <h1>DSS Recommendations – ${escapeHtml(village !== '—' ? village : (district !== '—' ? district : state))}, ${escapeHtml(state)}</h1>
+              <div class="meta small">Date: ${escapeHtml((meta.generated_at || new Date().toISOString()).slice(0,10))}</div>
+            </div>
+            <div class="small">Area: ${escapeHtml(areaTxt)}</div>
+          </header>
+          <div class="grid">
+            <main>
+              <div class="card">
+                <h3 class="small">A. Header</h3>
+                <p class="small">AOI: District: ${escapeHtml(district)}, State: ${escapeHtml(state)}</p>
+                ${(aoi.centroid_lat!=null && aoi.centroid_lon!=null) ? `<p class="small">Centroid: ${Number(aoi.centroid_lat).toFixed(5)}, ${Number(aoi.centroid_lon).toFixed(5)}</p>` : ''}
+              </div>
+              <div class="card" style="margin-top:10px">
+                <h3 class="small">B. Executive Summary</h3>
+                <ul class="bullets">${bullets.map(b=>`<li>${escapeHtml(b)}</li>`).join('')}</ul>
+              </div>
+              <div class="card" style="margin-top:10px">
+                <h3 class="small">C. Context Snapshot</h3>
+                <div>${rows.length?`<table>${rows.join('')}</table>`:'No key indicators available.'}</div>
+                ${notes.length?`<div class="small">${notes.map(n=>escapeHtml(n)).join('<br/>')}</div>`:''}
+              </div>
+              <div class="card" style="margin-top:10px">
+                <h3 class="small">D. Scheme Recommendations</h3>
+                <div class="small">
+                  <h4 style="margin:6px 0 4px">Jal Jeevan Mission (JJM)</h4>
+                  <p><strong>Focus:</strong> Functional Household Tap Connections (FHTC) & Source Sustainability</p>
+                  <p class="small"><strong>Why:</strong> ${escapeHtml(gwCategory||'—')}${delta!=null?`, seasonal delta ${escapeHtml(fix(delta,2))} m` : ''} — even where groundwater is currently classified as safe, declining seasonal trends indicate the need for proactive measures to secure drinking-water sources.</p>
+                  <p class="small"><strong>What:</strong> Prioritize universal FHTC coverage; combine this with on-the-ground source-sustainability works such as check dams, percolation tanks, contour bunding, farm ponds, and targeted recharge interventions. Encourage household- and community-level rainwater harvesting.</p>
+                  <p class="small"><strong>Where / How:</strong> Use topographic maps, hydrological flow-paths and existing waterbody layers to site recharge works in upper catchments and near habitations—prioritise areas showing larger seasonal declines or low FHTC coverage.</p>
+                  <p class="small"><strong>Caveats:</strong> Shallow or shale aquifers may show slower recharge; pair recharge works with demand-management (efficiency, leak reduction) and surface-water options where appropriate.</p>
+                </div>
+                <div class="small" style="margin-top:8px">
+                  <h4 style="margin:6px 0 4px">MGNREGA</h4>
+                  <p class="small"><strong>Focus:</strong> Natural Resource Management (NRM) & Livelihood Enhancement</p>
+                  <p class="small"><strong>Why:</strong> High job-card issuance and worker activation, together with significant women's participation and substantial forest cover, make MGNREGA a suitable delivery platform for large-scale NRM works.</p>
+                  <p class="small"><strong>What:</strong> Prioritise NRM activities — afforestation, soil & moisture conservation (farm ponds, trenches), and construction of water-harvesting and recharge structures. Link these works with livelihood activities (horticulture, agroforestry, NTFP value-addition).</p>
+                  <p class="small"><strong>Where / How:</strong> Target degraded forest patches, erosion-prone agricultural lands, and catchment areas identified from LULC maps, watershed boundaries, and village plans. Prioritise works that benefit marginalized groups including SC/ST households.</p>
+                  <p class="small"><strong>Caveats:</strong> Ensure works are demand-driven, quality-checked and accompanied by timely wage payments to sustain participation and produce long-lasting assets.</p>
+                </div>
+                <div class="small" style="margin-top:8px">
+                  <h4 style="margin:6px 0 4px">DA-JGUA (Development of Adivasi & Janjatiya Gram Udyog Abhiyan)</h4>
+                  <p class="small"><strong>Focus:</strong> FRA strengthening, TMMC feasibility and SCD/education outreach</p>
+                  <p class="small"><strong>Why:</strong> High forest cover and a substantial Scheduled Tribe population create both a need and opportunity to secure forest rights and promote forest-linked livelihoods.</p>
+                  <p class="small"><strong>What:</strong> Intensify FRA implementation (IFR & CFR), carry out feasibility studies for Tribal Minor Mineral Concessions (TMMC) where geologically appropriate, and run targeted SCD/educational outreach to improve access and uptake of development programs.</p>
+                  <p class="small"><strong>Where / How:</strong> Use forest boundary maps, habitation layers and traditional knowledge to identify CFR/IFR opportunities; consult geological maps for TMMC scoping; and plan outreach in tribal-dominated blocks and habitations.</p>
+                  <p class="small"><strong>Caveats:</strong> FRA processes must be participatory and rights-respecting; TMMC requires strict environmental safeguards and benefit-sharing to avoid exploitation.</p>
+                </div>
+              </div>
+            </main>
+            <aside>
+              <div class="card">
+                <h3 class="small">E. Implementation & Convergence</h3>
+                <div class="small">
+                  <p>Effective implementation requires strong inter-departmental convergence, clear leads and integrated planning at district and block levels. Below we outline recommended sectoral leads, convergence actions and operational guidance.</p>
+
+                  <h4 style="margin:8px 0 4px">JJM (Lead: Public Health Engineering / Rural Water Supply)</h4>
+                  <p class="small"><strong>Convergence actions:</strong> Work with MGNREGA for earthworks, desilting and construction of recharge structures; coordinate with Forest Department/CAMPA for planting and catchment protection around sources; partner with Panchayati Raj Institutions for community mobilisation, operation & maintenance, and behaviour-change campaigns to promote water conservation.</p>
+                  <p class="small"><strong>Operational guidance:</strong> Prepare village-level water security plans that map FHTC gaps, source vulnerability and priority recharge sites. Use MGNREGA funds for labor-intensive earthworks while assigning O&M responsibilities to local institutions.</p>
+
+                  <h4 style="margin:8px 0 4px">MGNREGA (Lead: Rural Development Department)</h4>
+                  <p class="small"><strong>Convergence actions:</strong> Coordinate with Forest Department for afforestation and forest protection works; with Agriculture for soil & moisture conservation and farm-ponds; with Water Resources for larger structures and watershed development; and with Tribal Welfare to ensure works reach tribal communities.</p>
+                  <p class="small"><strong>Operational guidance:</strong> Prioritise high-impact NRM packages that combine watershed works with livelihood components (horticulture, agroforestry). Ensure quality monitoring, geotagging of assets and timely wage payments to maintain participation.</p>
+
+                  <h4 style="margin:8px 0 4px">DA-JGUA (Lead: Tribal Welfare Department)</h4>
+                  <p class="small"><strong>Convergence actions:</strong> Work with Forest Department for joint verification and CFR/IFR processing; collaborate with Mines & Geology for TMMC feasibility and compliance; partner with Education for targeted outreach and scholarships; and link with Skill Development for vocational training tied to local resources.</p>
+                  <p class="small"><strong>Operational guidance:</strong> Conduct participatory mapping of forest-dwelling habitations, hold awareness camps for FRA claims, and ensure environmental impact assessments and equitable benefit-sharing for any mineral concessions.</p>
+
+                  <h4 style="margin:8px 0 4px">Cross-cutting recommendations</h4>
+                  <ul class="bullets">
+                    <li>Establish district-level convergence committees with nominated leads from each department and clear reporting lines.</li>
+                    <li>Use GIS-driven prioritisation (LULC, watershed boundaries, habitations, service coverage) to allocate resources efficiently.</li>
+                    <li>Institutionalise community participation (Panchayats, user groups) for O&M and local monitoring.</li>
+                    <li>Ensure safeguards: environmental assessments for extractive proposals, gender- and social-inclusion checks, and transparent benefit-sharing mechanisms.</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="card" style="margin-top:10px">
+                <h3 class="small">F. Annexure</h3>
+                ${annex}
+              </div>
+              <div style="margin-top:10px">${sourceListHtml}</div>
+            </aside>
+          </div>
+        </div>`;
+    } catch {
+      return '<p>Unable to format report.</p>';
+    }
+  }
+
+  // Build a minimal stub payload so we can always render "some" report
+  function buildStubPayload(ctx = {}, note = '') {
+    const now = new Date().toISOString();
+    const { state = '', district = '', village = '' } = ctx || {};
+    return {
+      aoi: { state, district, village },
+      meta: { generated_at: now, notes: note ? [String(note)] : [] },
+      indicators: {}
+    };
+  }
+
   function pickFirst(attrs, candidates) {
     for (const k of candidates) {
       if (attrs && Object.prototype.hasOwnProperty.call(attrs, k)) return attrs[k];
     }
     return undefined;
+  }
+
+  // Try to extract an HTML report string from various upstream payload shapes
+  function extractHtmlFromPayload(payload) {
+    if (!payload) return null;
+    // If string, return if looks like HTML or fenced code
+    if (typeof payload === 'string') {
+      const s = payload.trim();
+      if (!s) return null;
+      if (s.startsWith('<') || s.startsWith('```')) return s;
+      // sometimes server returns a JSON string
+      try { const p = JSON.parse(s); return extractHtmlFromPayload(p); } catch {}
+      return null;
+    }
+    // If object, common locations
+    const candidates = ['html', 'report_html', 'reportHtml', 'content', 'body', 'data', 'response'];
+    for (const k of candidates) {
+      if (Object.prototype.hasOwnProperty.call(payload, k)) {
+        const v = payload[k];
+        if (typeof v === 'string') {
+          const t = v.trim();
+          if (t.startsWith('<') || t.startsWith('```')) return t;
+        } else if (typeof v === 'object') {
+          const found = extractHtmlFromPayload(v);
+          if (found) return found;
+        }
+      }
+    }
+    // If payload looks like the expected report shape (has aoi or indicators), produce fallback HTML
+    if (payload && (payload.aoi || payload.indicators || payload.meta)) {
+          try { return renderDeterministicReport(payload); } catch { return null; }
+    }
+    return null;
   }
 
   function removeLayerGroup(baseId) {
@@ -437,6 +707,10 @@ export default function DSS() {
     setReportError('');
     setReportData(null);
     setReportHtml('');
+    const fetchId = Date.now();
+    const controller = new AbortController();
+    const timeoutMs = 15000; // client-side timeout mirrors server default
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const upstreamBase = 'https://fra-report-generator-375005976373.europe-west1.run.app/report';
       const qs = new URLSearchParams();
@@ -444,9 +718,10 @@ export default function DSS() {
       if (districtSel) qs.set('district', districtSel);
       if (villageSel) qs.set('village', villageSel);
       const upstreamUrl = `${upstreamBase}?${qs.toString()}`;
+      // Hit proxy (same-origin in prod). Add cache buster param if user has toggled selections quickly.
       const proxyUrl = `${baseUrl}/api/report?${qs.toString()}`;
 
-      const resp = await fetch(proxyUrl);
+      const resp = await fetch(proxyUrl, { signal: controller.signal });
       if (!resp.ok) throw new Error(`Report fetch failed: HTTP ${resp.status}`);
       const contentType = resp.headers.get('content-type') || '';
       let data;
@@ -455,45 +730,70 @@ export default function DSS() {
       } else {
         data = await resp.text();
       }
+      // Guard against race: if user changed state/district mid-fetch, we bail
+      if (stateSel !== qs.get('state') || districtSel !== (qs.get('district')||'') || villageSel !== (qs.get('village')||'')) {
+        return; // stale
+      }
       setReportData({ url: upstreamUrl, data, contentType });
 
-      // If JSON, immediately show client-side formatted HTML, then try server formatter to enhance
       if ((contentType.includes('application/json') || typeof data === 'object') && data) {
-        // Immediate client-side render to avoid raw JSON
-        let immediate = formatHtmlFallback(data, { state: stateSel, district: districtSel, village: villageSel });
+        let immediate = renderDeterministicReport(data, { state: stateSel, district: districtSel, village: villageSel });
         if (immediate && immediate.startsWith('```')) {
           immediate = immediate.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
         }
         setReportHtml(immediate);
         setReportError('');
 
-        // Fire-and-improve with server formatter (non-blocking UX)
-        try {
-          const fmtResp = await fetch(`${baseUrl}/api/report/format`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data, context: { state: stateSel, district: districtSel, village: villageSel } })
-          });
-          if (fmtResp.ok) {
-            const { html } = await fmtResp.json();
-            if (typeof html === 'string' && html.trim()) {
-              let improved = html.trim();
-              if (improved.startsWith('```')) {
-                improved = improved.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
+        // Enhance via server formatter (ignore errors)
+        (async () => {
+          try {
+            const fmtResp = await fetch(`${baseUrl}/api/report/format`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data, context: { state: stateSel, district: districtSel, village: villageSel } })
+            });
+            if (fmtResp.ok) {
+              const { html } = await fmtResp.json();
+              if (typeof html === 'string' && html.trim()) {
+                let improved = html.trim();
+                if (improved.startsWith('```')) improved = improved.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
+                // Ensure still same selection
+                if (stateSel === qs.get('state') && districtSel === (qs.get('district')||'') && villageSel === (qs.get('village')||'')) {
+                  setReportHtml(improved);
+                }
               }
-              setReportHtml(improved);
             }
-          } else {
-            console.warn('Formatter failed status:', fmtResp.status);
+          } catch (err) {
+            console.warn('Formatter enhance failed:', err?.message || err);
           }
-        } catch (e) {
-          console.warn('Formatter request threw:', e);
-        }
+        })();
+      } else {
+        // Non-JSON response (e.g., plain text). Ensure we still have a
+        // renderable report by creating a stub based on current selection.
+        const stub = buildStubPayload({ state: stateSel, district: districtSel, village: villageSel }, 'Upstream returned non-JSON content. Showing fallback.');
+        const immediate = renderDeterministicReport(stub, { state: stateSel, district: districtSel, village: villageSel });
+        if (immediate) setReportHtml(immediate.startsWith('```') ? immediate.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '') : immediate);
       }
     } catch (e) {
-      setReportError(e?.message || 'Failed to fetch report');
-      console.error('Fetch report failed:', e);
+      // Always surface a report, even on timeout or network failure
+      const note = (e?.name === 'AbortError')
+        ? `Timed out after ${Math.round(timeoutMs/1000)}s waiting for report.`
+        : (e?.message || 'Failed to fetch report');
+      setReportError('');
+      console.warn('Report fetch error, using fallback:', note);
+      const stub = buildStubPayload({ state: stateSel, district: districtSel, village: villageSel }, note);
+      setReportData({ url: 'fallback://offline', data: stub, contentType: 'application/json' });
+      try {
+        let immediate = renderDeterministicReport(stub, { state: stateSel, district: districtSel, village: villageSel });
+        if (immediate && immediate.startsWith('```')) {
+          immediate = immediate.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
+        }
+        setReportHtml(immediate || '<p>Unable to render fallback.</p>');
+      } catch (_) {
+        setReportHtml('<p>Unable to render fallback.</p>');
+      }
     } finally {
+      clearTimeout(timer);
       setReportLoading(false);
     }
   }
@@ -546,7 +846,7 @@ export default function DSS() {
       </div>
       {/* Right: Report panel */}
       <div className="hidden lg:flex flex-1 bg-white rounded-lg shadow-sm border border-gray-100 p-0 overflow-hidden flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
           <h4 className="text-base font-semibold text-gray-900">Report</h4>
           <div className="flex items-center gap-2">
             <button
@@ -588,7 +888,7 @@ export default function DSS() {
               disabled={!reportData || pdfLoading || reportLoading}
               className="px-2.5 py-1.5 rounded-md text-xs bg-emerald-600 text-white disabled:opacity-50"
             >
-              {pdfLoading ? 'Preparing PDF…' : 'Download PDF'}
+              {pdfLoading ? 'Preparing PDF��' : 'Download PDF'}
             </button>
           </div>
         </div>
@@ -602,15 +902,28 @@ export default function DSS() {
           )}
           {!reportLoading && !reportError && reportData && (
             <div className="text-sm">
-              {reportHtml ? (
-                <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: reportHtml }} />
-              ) : (
-                String(reportData.contentType || '').includes('application/json') ? (
-                  <pre className="text-xs bg-gray-50 border rounded p-3 whitespace-pre-wrap break-words">{JSON.stringify(reportData.data, null, 2)}</pre>
-                ) : (
-                  <pre className="text-xs bg-gray-50 border rounded p-3 whitespace-pre-wrap break-words">{String(reportData.data || '')}</pre>
-                )
-              )}
+{(() => {
+                // Prefer server-provided HTML if present
+                const extracted = extractHtmlFromPayload(reportData.data);
+                if (extracted && typeof extracted === 'string') {
+                  const html = extracted.startsWith('```') ? extracted.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '') : extracted;
+                  return <div className="prose prose-sm max-w-none bg-white rounded-lg border shadow-sm p-4" dangerouslySetInnerHTML={{ __html: html }} />;
+                }
+                // Fallback to client-side formatted HTML if available
+                if (reportHtml) {
+                  return <div className="prose prose-sm max-w-none bg-white rounded-lg border shadow-sm p-4" dangerouslySetInnerHTML={{ __html: reportHtml }} />;
+                }
+                // Otherwise show raw JSON or text with hint
+                if (String(reportData.contentType || '').includes('application/json') || typeof reportData.data === 'object') {
+                  return (
+                    <div>
+                      <div className="mb-2 text-xs text-gray-500">Formatted HTML not available — showing raw JSON below for inspection.</div>
+                      <pre className="text-xs bg-gray-50 border rounded p-3 whitespace-pre-wrap break-words">{JSON.stringify(reportData.data, null, 2)}</pre>
+                    </div>
+                  );
+                }
+                return <pre className="text-xs bg-gray-50 border rounded p-3 whitespace-pre-wrap break-words">{String(reportData.data || '')}</pre>;
+              })()}
             </div>
           )}
           {!reportLoading && !reportError && !reportData && stateSel && (
@@ -621,3 +934,4 @@ export default function DSS() {
     </div>
   );
 }
+
