@@ -544,6 +544,17 @@ router.post('/pdf', async (req, res) => {
 
     const filenameBase = [context?.state, context?.district, context?.village].filter(Boolean).join('_') || 'dss_report';
     const filename = `${filenameBase.replace(/\s+/g, '_').toLowerCase()}.pdf`;
+    // If PDF generation failed (pdfBuffer is null/undefined), return the HTML fallback
+    if (!pdfBuffer) {
+      console.warn('[report/pdf] PDF generation unavailable, returning HTML fallback. Last error:', lastError && lastError.message ? lastError.message : lastError);
+      res.setHeader('X-PDF-Generation', 'unavailable');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      // Use inline disposition so browser can open and allow user to Print -> Save as PDF
+      res.setHeader('Content-Disposition', `inline; filename="${String(filename).replace(/\"/g, '')}"`);
+      const fallbackHtml = (html && String(html).trim()) ? String(html) : formatHtmlDeterministicServer(data, context || {});
+      return res.status(200).send(fallbackHtml);
+    }
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(Buffer.from(pdfBuffer));
