@@ -164,17 +164,17 @@ export default function DSS() {
     mgnrega_workers: 'MGNREGA workers'
   };
 
-  function escapeHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function escapeHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function findLabelForUrl(u) {
-    try { const s = String(u||''); const key = Object.keys(DATA_SOURCE_LABELS).find(k=>s.includes(k)); if (key) return DATA_SOURCE_LABELS[key]; const url = new URL(s); const parts = url.pathname.split('/').filter(Boolean); if (parts.length>=2) return parts.slice(-2).join('/'); return url.hostname; } catch { return String(u||'').slice(0,60); }
+    try { const s = String(u || ''); const key = Object.keys(DATA_SOURCE_LABELS).find(k => s.includes(k)); if (key) return DATA_SOURCE_LABELS[key]; const url = new URL(s); const parts = url.pathname.split('/').filter(Boolean); if (parts.length >= 2) return parts.slice(-2).join('/'); return url.hostname; } catch { return String(u || '').slice(0, 60); }
   }
   function normalizeSourceEntry(entry) {
-    if (entry == null) return { label:'', url:'', raw:'' };
-    if (typeof entry === 'object') { const keys = Object.keys(entry); if (keys.length===1 && typeof entry[keys[0]]==='string') { const k = keys[0]; const url = entry[k]; const label = SHORT_SOURCE_LABELS[k] || (k.charAt(0).toUpperCase()+k.slice(1)); return { label, url, raw: url }; } const url = entry.url || entry.link || entry.source || null; const label = entry.label || entry.name || (url?findLabelForUrl(url):JSON.stringify(entry)); return { label, url, raw: url||JSON.stringify(entry) }; }
+    if (entry == null) return { label: '', url: '', raw: '' };
+    if (typeof entry === 'object') { const keys = Object.keys(entry); if (keys.length === 1 && typeof entry[keys[0]] === 'string') { const k = keys[0]; const url = entry[k]; const label = SHORT_SOURCE_LABELS[k] || (k.charAt(0).toUpperCase() + k.slice(1)); return { label, url, raw: url }; } const url = entry.url || entry.link || entry.source || null; const label = entry.label || entry.name || (url ? findLabelForUrl(url) : JSON.stringify(entry)); return { label, url, raw: url || JSON.stringify(entry) }; }
     const s = String(entry).trim(); const kv = s.match(/^([a-zA-Z0-9_\-]+)\s*:\s*(https?:\/\/\S+)$/i) || s.match(/^([a-zA-Z0-9_\-]+)\s*:\s*(\S+)$/i);
-    if (kv) { const key = kv[1]; const val = kv[2]; const label = SHORT_SOURCE_LABELS[key] || key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); return { label, url: val, raw: val }; }
+    if (kv) { const key = kv[1]; const val = kv[2]; const label = SHORT_SOURCE_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); return { label, url: val, raw: val }; }
     if (/^https?:\/\//i.test(s)) return { label: findLabelForUrl(s), url: s, raw: s };
-    return { label: s, url:'', raw: s };
+    return { label: s, url: '', raw: s };
   }
 
   function renderDeterministicReport(json, ctx = {}) {
@@ -188,12 +188,12 @@ export default function DSS() {
       const village = (ctx.village || aoi.village || '').trim() || '—';
 
       const rawArea = aoi.area_sqkm ?? aoi.geographic_area_sqkm ?? aoi?.additional_attributes?.area_sqkm;
-      let areaKm2 = null; if (typeof rawArea === 'number') areaKm2 = rawArea > 1e7 ? rawArea/1e6 : rawArea; else if (typeof rawArea === 'string' && !isNaN(Number(rawArea))) { const n = Number(rawArea); areaKm2 = n>1e7 ? n/1e6 : n; }
+      let areaKm2 = null; if (typeof rawArea === 'number') areaKm2 = rawArea > 1e7 ? rawArea / 1e6 : rawArea; else if (typeof rawArea === 'string' && !isNaN(Number(rawArea))) { const n = Number(rawArea); areaKm2 = n > 1e7 ? n / 1e6 : n; }
       const areaTxt = areaKm2 != null ? `${areaKm2.toFixed(2)} km²` : '—';
 
-      const pct=(v,d=2)=>(v==null||isNaN(Number(v))?'—':`${Number(v).toFixed(d)}%`);
-      const num=(v)=>(v==null||isNaN(Number(v))?'—':Number(v).toLocaleString('en-IN'));
-      const fix=(v,d=2)=>(v==null||isNaN(Number(v))?'—':Number(v).toFixed(d));
+      const pct = (v, d = 2) => (v == null || isNaN(Number(v)) ? '—' : `${Number(v).toFixed(d)}%`);
+      const num = (v) => (v == null || isNaN(Number(v)) ? '—' : Number(v).toLocaleString('en-IN'));
+      const fix = (v, d = 2) => (v == null || isNaN(Number(v)) ? '—' : Number(v).toFixed(d));
 
       const lulc = ind.lulc_pc || ind.lulc || {};
       const gw = ind.gw || ind.groundwater || {};
@@ -213,59 +213,62 @@ export default function DSS() {
         <style>
           :root{--muted:#6b7280;--accent:#0b5cff}
           body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#111827;margin:0}
-          .container{max-width:980px;margin:12px auto;padding:18px}
+          .container{max-width:980px ;margin:12px auto;padding:18px}
           header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid #eef2f7;padding-bottom:10px}
           header h1{font-size:18px;margin:0}
           header .meta{font-size:12px;color:var(--muted)}
-          .grid{display:grid;grid-template-columns:1fr 320px;gap:14px;margin-top:12px}
+          .report-grid{display:block;margin-top:18px}
+          .section{margin-bottom:12px}
+          .heading{font-size:14px;font-weight:700;color:#0b376b;margin-bottom:8px}
+          .sub{font-size:13px;font-weight:600;color:#1f2937;margin-bottom:6px}
           .card{padding:12px;border:1px solid #f1f5f9;border-radius:6px;background:#fff}
           .bullets{padding-left:18px;margin:8px 0}
           table{width:100%;border-collapse:collapse;font-size:13px}
           table td, table th{border:1px solid #eef2f7;padding:6px 8px}
           .small{font-size:12px;color:var(--muted)}
           a.source{color:var(--accent);text-decoration:none}
-          @media print{ .grid{grid-template-columns:1fr 320px} }
+          @media print{ .report-grid{grid-template-columns:1fr 320px} }
         </style>`;
 
       const bullets = [];
-      bullets.push(`Jal Jeevan Mission (JJM): Despite a "${gwCategory||'—'}" groundwater category, ${delta!=null?`a ${Number(delta)<0?'decline':'rise'} in seasonal groundwater levels (${fix(delta,2)} m)`:'seasonal variation'} necessitates strong source sustainability along with FHTC coverage.`);
+      bullets.push(`Jal Jeevan Mission (JJM): Despite a "${gwCategory || '—'}" groundwater category, ${delta != null ? `a ${Number(delta) < 0 ? 'decline' : 'rise'} in seasonal groundwater levels (${fix(delta, 2)} m)` : 'seasonal variation'} necessitates strong source sustainability along with FHTC coverage.`);
       bullets.push(`MGNREGA: Leverage job card issuance ${pct(issuance)}, worker activation ${pct(activation)}, and women participation ${pct(women)} to deliver NRM works (afforestation, water harvesting).`);
-      bullets.push(`DA-JGUA: With forest cover ${forestPct!=null?pct(forestPct):'—'}, strengthen FRA, assess TMMC and expand SCD/Education outreach.`);
-      if (delta!=null) bullets.push(`Groundwater Management: Address seasonal delta ${fix(delta,2)} m via rainwater harvesting and artificial recharge; tailor to ${aquiferType||'local aquifer'} conditions.`);
+      bullets.push(`DA-JGUA: With forest cover ${forestPct != null ? pct(forestPct) : '—'}, strengthen FRA, assess TMMC and expand SCD/Education outreach.`);
+      if (delta != null) bullets.push(`Groundwater Management: Address seasonal delta ${fix(delta, 2)} m via rainwater harvesting and artificial recharge; tailor to ${aquiferType || 'local aquifer'} conditions.`);
 
       const rows = [];
-      if (forestPct!=null) rows.push(`<tr><td>Forest Cover</td><td>${pct(forestPct,2)}</td></tr>`);
-      if (lulc.cropland_percentage!=null) rows.push(`<tr><td>Cropland</td><td>${pct(lulc.cropland_percentage,2)}</td></tr>`);
-      if (lulc.builtup_percentage!=null) rows.push(`<tr><td>Built-up Area</td><td>${pct(lulc.builtup_percentage,2)}</td></tr>`);
-      if (preDepth!=null) rows.push(`<tr><td>Pre-Monsoon Depth</td><td>${fix(preDepth,2)} m</td></tr>`);
-      if (delta!=null) rows.push(`<tr><td>Seasonal Delta</td><td>${fix(delta,2)} m</td></tr>`);
+      if (forestPct != null) rows.push(`<tr><td>Forest Cover</td><td>${pct(forestPct, 2)}</td></tr>`);
+      if (lulc.cropland_percentage != null) rows.push(`<tr><td>Cropland</td><td>${pct(lulc.cropland_percentage, 2)}</td></tr>`);
+      if (lulc.builtup_percentage != null) rows.push(`<tr><td>Built-up Area</td><td>${pct(lulc.builtup_percentage, 2)}</td></tr>`);
+      if (preDepth != null) rows.push(`<tr><td>Pre-Monsoon Depth</td><td>${fix(preDepth, 2)} m</td></tr>`);
+      if (delta != null) rows.push(`<tr><td>Seasonal Delta</td><td>${fix(delta, 2)} m</td></tr>`);
       if (gwCategory) rows.push(`<tr><td>Groundwater Category</td><td>${escapeHtml(gwCategory)}</td></tr>`);
       if (aquiferType) rows.push(`<tr><td>Aquifer Type</td><td>${escapeHtml(aquiferType)}</td></tr>`);
-      if (issuance!=null) rows.push(`<tr><td>Job Card Issuance Rate</td><td>${pct(issuance,2)}</td></tr>`);
-      if (activation!=null) rows.push(`<tr><td>Worker Activation Rate</td><td>${pct(activation,2)}</td></tr>`);
-      if (women!=null) rows.push(`<tr><td>Women Participation</td><td>${pct(women,2)}</td></tr>`);
-      if (mgn.jobcards_issued!=null) rows.push(`<tr><td>Job Cards Issued</td><td>${num(mgn.jobcards_issued)}</td></tr>`);
-      if (mgn.active_workers_total!=null) rows.push(`<tr><td>Active Workers</td><td>${num(mgn.active_workers_total)}</td></tr>`);
-      if (mgn.active_workers_women!=null) rows.push(`<tr><td>Active Women Workers</td><td>${num(mgn.active_workers_women)}</td></tr>`);
+      if (issuance != null) rows.push(`<tr><td>Job Card Issuance Rate</td><td>${pct(issuance, 2)}</td></tr>`);
+      if (activation != null) rows.push(`<tr><td>Worker Activation Rate</td><td>${pct(activation, 2)}</td></tr>`);
+      if (women != null) rows.push(`<tr><td>Women Participation</td><td>${pct(women, 2)}</td></tr>`);
+      if (mgn.jobcards_issued != null) rows.push(`<tr><td>Job Cards Issued</td><td>${num(mgn.jobcards_issued)}</td></tr>`);
+      if (mgn.active_workers_total != null) rows.push(`<tr><td>Active Workers</td><td>${num(mgn.active_workers_total)}</td></tr>`);
+      if (mgn.active_workers_women != null) rows.push(`<tr><td>Active Women Workers</td><td>${num(mgn.active_workers_women)}</td></tr>`);
 
-      const notes = Array.isArray(meta.notes)?meta.notes:[];
-      const sources = Array.isArray(meta.data_sources)?meta.data_sources:[];
+      const notes = Array.isArray(meta.notes) ? meta.notes : [];
+      const sources = Array.isArray(meta.data_sources) ? meta.data_sources : [];
 
       const annex = `
         <table>
           <thead><tr><th>Indicator</th><th>Value</th><th>Unit</th></tr></thead>
           <tbody>
-            ${forestPct!=null?`<tr><td>Forest Cover</td><td>${fix(forestPct,2)}</td><td>%</td></tr>`:''}
-            ${preDepth!=null?`<tr><td>Groundwater Pre‑Monsoon Depth</td><td>${fix(preDepth,2)}</td><td>m</td></tr>`:''}
-            ${delta!=null?`<tr><td>Groundwater Seasonal Delta</td><td>${fix(delta,2)}</td><td>m</td></tr>`:''}
-            ${gwCategory?`<tr><td>Groundwater Category</td><td>${escapeHtml(gwCategory)}</td><td>—</td></tr>`:''}
-            ${aquiferType?`<tr><td>Aquifer Type</td><td>${escapeHtml(aquiferType)}</td><td>—</td></tr>`:''}
-            ${issuance!=null?`<tr><td>MGNREGA Job Card Issuance Rate</td><td>${fix(issuance,2)}</td><td>%</td></tr>`:''}
-            ${activation!=null?`<tr><td>MGNREGA Worker Activation Rate</td><td>${fix(activation,2)}</td><td>%</td></tr>`:''}
-            ${women!=null?`<tr><td>MGNREGA Women Participation</td><td>${fix(women,2)}</td><td>%</td></tr>`:''}
-            ${mgn.jobcards_issued!=null?`<tr><td>MGNREGA Job Cards Issued</td><td>${num(mgn.jobcards_issued)}</td><td>—</td></tr>`:''}
-            ${mgn.active_workers_total!=null?`<tr><td>MGNREGA Active Workers</td><td>${num(mgn.active_workers_total)}</td><td>—</td></tr>`:''}
-            ${mgn.active_workers_women!=null?`<tr><td>MGNREGA Active Women Workers</td><td>${num(mgn.active_workers_women)}</td><td>—</td></tr>`:''}
+            ${forestPct != null ? `<tr><td>Forest Cover</td><td>${fix(forestPct, 2)}</td><td>%</td></tr>` : ''}
+            ${preDepth != null ? `<tr><td>Groundwater Pre‑Monsoon Depth</td><td>${fix(preDepth, 2)}</td><td>m</td></tr>` : ''}
+            ${delta != null ? `<tr><td>Groundwater Seasonal Delta</td><td>${fix(delta, 2)}</td><td>m</td></tr>` : ''}
+            ${gwCategory ? `<tr><td>Groundwater Category</td><td>${escapeHtml(gwCategory)}</td><td>—</td></tr>` : ''}
+            ${aquiferType ? `<tr><td>Aquifer Type</td><td>${escapeHtml(aquiferType)}</td><td>—</td></tr>` : ''}
+            ${issuance != null ? `<tr><td>MGNREGA Job Card Issuance Rate</td><td>${fix(issuance, 2)}</td><td>%</td></tr>` : ''}
+            ${activation != null ? `<tr><td>MGNREGA Worker Activation Rate</td><td>${fix(activation, 2)}</td><td>%</td></tr>` : ''}
+            ${women != null ? `<tr><td>MGNREGA Women Participation</td><td>${fix(women, 2)}</td><td>%</td></tr>` : ''}
+            ${mgn.jobcards_issued != null ? `<tr><td>MGNREGA Job Cards Issued</td><td>${num(mgn.jobcards_issued)}</td><td>—</td></tr>` : ''}
+            ${mgn.active_workers_total != null ? `<tr><td>MGNREGA Active Workers</td><td>${num(mgn.active_workers_total)}</td><td>—</td></tr>` : ''}
+            ${mgn.active_workers_women != null ? `<tr><td>MGNREGA Active Women Workers</td><td>${num(mgn.active_workers_women)}</td><td>—</td></tr>` : ''}
           </tbody>
         </table>`;
 
@@ -283,89 +286,96 @@ export default function DSS() {
         ${styles}
         <div class="container">
           <header>
-            <div>
-              <h1>DSS Recommendations – ${escapeHtml(village !== '—' ? village : (district !== '—' ? district : state))}, ${escapeHtml(state)}</h1>
-              <div class="meta small">Date: ${escapeHtml((meta.generated_at || new Date().toISOString()).slice(0,10))}</div>
-            </div>
-            <div class="small">Area: ${escapeHtml(areaTxt)}</div>
+        <div>
+          <h1>DSS Recommendations – ${escapeHtml(village !== '—' ? village : (district !== '—' ? district : state))}, ${escapeHtml(state)}</h1>
+          <div class="meta small">Date: ${escapeHtml((meta.generated_at || new Date().toISOString()).slice(0, 10))}</div>
+        </div>
+        <div class="small">Area: ${escapeHtml(areaTxt)}</div>
           </header>
-          <div class="grid">
-            <main>
-              <div class="card">
-                <h3 class="small">A. Header</h3>
-                <p class="small">AOI: District: ${escapeHtml(district)}, State: ${escapeHtml(state)}</p>
-                ${(aoi.centroid_lat!=null && aoi.centroid_lon!=null) ? `<p class="small">Centroid: ${Number(aoi.centroid_lat).toFixed(5)}, ${Number(aoi.centroid_lon).toFixed(5)}</p>` : ''}
-              </div>
-              <div class="card" style="margin-top:10px">
-                <h3 class="small">B. Executive Summary</h3>
-                <ul class="bullets">${bullets.map(b=>`<li>${escapeHtml(b)}</li>`).join('')}</ul>
-              </div>
-              <div class="card" style="margin-top:10px">
-                <h3 class="small">C. Context Snapshot</h3>
-                <div>${rows.length?`<table>${rows.join('')}</table>`:'No key indicators available.'}</div>
-                ${notes.length?`<div class="small">${notes.map(n=>escapeHtml(n)).join('<br/>')}</div>`:''}
-              </div>
-              <div class="card" style="margin-top:10px">
-                <h3 class="small">D. Scheme Recommendations</h3>
-                <div class="small">
-                  <h4 style="margin:6px 0 4px">Jal Jeevan Mission (JJM)</h4>
-                  <p><strong>Focus:</strong> Functional Household Tap Connections (FHTC) & Source Sustainability</p>
-                  <p class="small"><strong>Why:</strong> ${escapeHtml(gwCategory||'—')}${delta!=null?`, seasonal delta ${escapeHtml(fix(delta,2))} m` : ''} — even where groundwater is currently classified as safe, declining seasonal trends indicate the need for proactive measures to secure drinking-water sources.</p>
-                  <p class="small"><strong>What:</strong> Prioritize universal FHTC coverage; combine this with on-the-ground source-sustainability works such as check dams, percolation tanks, contour bunding, farm ponds, and targeted recharge interventions. Encourage household- and community-level rainwater harvesting.</p>
-                  <p class="small"><strong>Where / How:</strong> Use topographic maps, hydrological flow-paths and existing waterbody layers to site recharge works in upper catchments and near habitations—prioritise areas showing larger seasonal declines or low FHTC coverage.</p>
-                  <p class="small"><strong>Caveats:</strong> Shallow or shale aquifers may show slower recharge; pair recharge works with demand-management (efficiency, leak reduction) and surface-water options where appropriate.</p>
-                </div>
-                <div class="small" style="margin-top:8px">
-                  <h4 style="margin:6px 0 4px">MGNREGA</h4>
-                  <p class="small"><strong>Focus:</strong> Natural Resource Management (NRM) & Livelihood Enhancement</p>
-                  <p class="small"><strong>Why:</strong> High job-card issuance and worker activation, together with significant women's participation and substantial forest cover, make MGNREGA a suitable delivery platform for large-scale NRM works.</p>
-                  <p class="small"><strong>What:</strong> Prioritise NRM activities — afforestation, soil & moisture conservation (farm ponds, trenches), and construction of water-harvesting and recharge structures. Link these works with livelihood activities (horticulture, agroforestry, NTFP value-addition).</p>
-                  <p class="small"><strong>Where / How:</strong> Target degraded forest patches, erosion-prone agricultural lands, and catchment areas identified from LULC maps, watershed boundaries, and village plans. Prioritise works that benefit marginalized groups including SC/ST households.</p>
-                  <p class="small"><strong>Caveats:</strong> Ensure works are demand-driven, quality-checked and accompanied by timely wage payments to sustain participation and produce long-lasting assets.</p>
-                </div>
-                <div class="small" style="margin-top:8px">
-                  <h4 style="margin:6px 0 4px">DA-JGUA (Development of Adivasi & Janjatiya Gram Udyog Abhiyan)</h4>
-                  <p class="small"><strong>Focus:</strong> FRA strengthening, TMMC feasibility and SCD/education outreach</p>
-                  <p class="small"><strong>Why:</strong> High forest cover and a substantial Scheduled Tribe population create both a need and opportunity to secure forest rights and promote forest-linked livelihoods.</p>
-                  <p class="small"><strong>What:</strong> Intensify FRA implementation (IFR & CFR), carry out feasibility studies for Tribal Minor Mineral Concessions (TMMC) where geologically appropriate, and run targeted SCD/educational outreach to improve access and uptake of development programs.</p>
-                  <p class="small"><strong>Where / How:</strong> Use forest boundary maps, habitation layers and traditional knowledge to identify CFR/IFR opportunities; consult geological maps for TMMC scoping; and plan outreach in tribal-dominated blocks and habitations.</p>
-                  <p class="small"><strong>Caveats:</strong> FRA processes must be participatory and rights-respecting; TMMC requires strict environmental safeguards and benefit-sharing to avoid exploitation.</p>
-                </div>
-              </div>
-            </main>
-            <aside>
-              <div class="card">
-                <h3 class="small">E. Implementation & Convergence</h3>
-                <div class="small">
-                  <p>Effective implementation requires strong inter-departmental convergence, clear leads and integrated planning at district and block levels. Below we outline recommended sectoral leads, convergence actions and operational guidance.</p>
+          <div class="report-grid">
+        <main>
+          <div class="card">
+            <div class="heading">A. Header</div>
+            <p class="small">AOI: District: ${escapeHtml(district)}, State: ${escapeHtml(state)}</p>
+            ${(aoi.centroid_lat != null && aoi.centroid_lon != null) ? `<p class="small">Centroid: ${Number(aoi.centroid_lat).toFixed(5)}, ${Number(aoi.centroid_lon).toFixed(5)}</p>` : ''}
+          </div>
+          <div class="card" style="margin-top:10px">
+            <div class="heading">B. Executive Summary</div>
+            <ul class="bullets">${bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+          </div>
+          <div class="card" style="margin-top:10px">
+            <div class="heading">C. Context Snapshot</div>
+            <div>${rows.length ? `<table>${rows.join('')}</table>` : 'No key indicators available.'}</div>
+            ${notes.length ? `<div class="small">${notes.map(n => escapeHtml(n)).join('<br/>')}</div>` : ''}
+          </div>
+          <div class="card" style="margin-top:10px">
+            <div class="heading">D. Scheme Recommendations</div>
+            <div class="small">
+          <div class="sub" style="margin:6px 0 2px">Jal Jeevan Mission (JJM)</div>
+          <p><strong>Focus:</strong> Functional Household Tap Connections (FHTC) & Source Sustainability</p>
+          <p class="small"><strong>Why:</strong> ${escapeHtml(gwCategory || '—')}${delta != null ? `, seasonal delta ${escapeHtml(fix(delta, 2))} m` : ''} — even where groundwater is currently classified as safe, declining seasonal trends indicate the need for proactive measures to secure drinking-water sources.</p>
+          <p class="small"><strong>What:</strong> Prioritize universal FHTC coverage; combine this with on-the-ground source-sustainability works such as check dams, percolation tanks, contour bunding, farm ponds, and targeted recharge interventions. Encourage household- and community-level rainwater harvesting.</p>
+          <p class="small"><strong>Where / How:</strong> Use topographic maps, hydrological flow-paths and existing waterbody layers to site recharge works in upper catchments and near habitations—prioritise areas showing larger seasonal declines or low FHTC coverage.</p>
+          <p class="small"><strong>Caveats:</strong> Shallow or shale aquifers may show slower recharge; pair recharge works with demand-management (efficiency, leak reduction) and surface-water options where appropriate.</p>
+            </div>
+            
+            <div style="margin-top:8px">
+          <div class="sub" style="margin:6px 0 2px">MGNREGA</div>
+          <p class="small"><strong>Focus:</strong> Natural Resource Management (NRM) & Livelihood Enhancement</p>
+          <p class="small"><strong>Why:</strong> High job-card issuance and worker activation, together with significant women's participation and substantial forest cover, make MGNREGA a suitable delivery platform for large-scale NRM works.</p>
+          <p class="small"><strong>What:</strong> Prioritise NRM activities — afforestation, soil & moisture conservation (farm ponds, trenches), and construction of water-harvesting and recharge structures. Link these works with livelihood activities (horticulture, agroforestry, NTFP value-addition).</p>
+          <p class="small"><strong>Where / How:</strong> Target degraded forest patches, erosion-prone agricultural lands, and catchment areas identified from LULC maps, watershed boundaries, and village plans. Prioritise works that benefit marginalized groups including SC/ST households.</p>
+          <p class="small"><strong>Caveats:</strong> Ensure works are demand-driven, quality-checked and accompanied by timely wage payments to sustain participation and produce long-lasting assets.</p>
+            </div>
+            <div class="small" style="margin-top:8px">
+          <div class="sub" style="margin:6px 0 2px">DA-JGUA (Development of Adivasi & Janjatiya Gram Udyog Abhiyan)</div>
+          <p class="small"><strong>Focus:</strong> FRA strengthening, TMMC feasibility and SCD/education outreach</p>
+          <p class="small"><strong>Why:</strong> High forest cover and a substantial Scheduled Tribe population create both a need and opportunity to secure forest rights and promote forest-linked livelihoods.</p>
+          <p class="small"><strong>What:</strong> Intensify FRA implementation (IFR & CFR), carry out feasibility studies for Tribal Minor Mineral Concessions (TMMC) where geologically appropriate, and run targeted SCD/educational outreach to improve access and uptake of development programs.</p>
+          <p class="small"><strong>Where / How:</strong> Use forest boundary maps, habitation layers and traditional knowledge to identify CFR/IFR opportunities; consult geological maps for TMMC scoping; and plan outreach in tribal-dominated blocks and habitations.</p>
+          <p class="small"><strong>Caveats:</strong> FRA processes must be participatory and rights-respecting; TMMC requires strict environmental safeguards and benefit-sharing to avoid exploitation.</p>
+            </div>
+          </div>
+        </main>
+      
+        <section class="section">
+          <div class="card">
+            <div class="heading">E. Implementation & Convergence</div>
+            <div class="small">
+          <p>Effective implementation requires strong inter-departmental convergence, clear leads and integrated planning at district and block levels. Below we outline recommended sectoral leads, convergence actions and operational guidance.</p>
 
-                  <h4 style="margin:8px 0 4px">JJM (Lead: Public Health Engineering / Rural Water Supply)</h4>
-                  <p class="small"><strong>Convergence actions:</strong> Work with MGNREGA for earthworks, desilting and construction of recharge structures; coordinate with Forest Department/CAMPA for planting and catchment protection around sources; partner with Panchayati Raj Institutions for community mobilisation, operation & maintenance, and behaviour-change campaigns to promote water conservation.</p>
-                  <p class="small"><strong>Operational guidance:</strong> Prepare village-level water security plans that map FHTC gaps, source vulnerability and priority recharge sites. Use MGNREGA funds for labor-intensive earthworks while assigning O&M responsibilities to local institutions.</p>
+          <div class="sub" style="margin:6px 0 2px">JJM (Lead: Public Health Engineering / Rural Water Supply)</div>
+          <p class="small"><strong>Convergence actions:</strong> Work with MGNREGA for earthworks, desilting and construction of recharge structures; coordinate with Forest Department/CAMPA for planting and catchment protection around sources; partner with Panchayati Raj Institutions for community mobilisation, operation & maintenance, and behaviour-change campaigns to promote water conservation.</p>
+          <p class="small"><strong>Operational guidance:</strong> Prepare village-level water security plans that map FHTC gaps, source vulnerability and priority recharge sites. Use MGNREGA funds for labor-intensive earthworks while assigning O&M responsibilities to local institutions.</p>
 
-                  <h4 style="margin:8px 0 4px">MGNREGA (Lead: Rural Development Department)</h4>
-                  <p class="small"><strong>Convergence actions:</strong> Coordinate with Forest Department for afforestation and forest protection works; with Agriculture for soil & moisture conservation and farm-ponds; with Water Resources for larger structures and watershed development; and with Tribal Welfare to ensure works reach tribal communities.</p>
-                  <p class="small"><strong>Operational guidance:</strong> Prioritise high-impact NRM packages that combine watershed works with livelihood components (horticulture, agroforestry). Ensure quality monitoring, geotagging of assets and timely wage payments to maintain participation.</p>
+          <div class="sub" style="margin:6px 0 2px">MGNREGA (Lead: Rural Development Department)</div>
+          <p class="small"><strong>Convergence actions:</strong> Coordinate with Forest Department for afforestation and forest protection works; with Agriculture for soil & moisture conservation and farm-ponds; with Water Resources for larger structures and watershed development; and with Tribal Welfare to ensure works reach tribal communities.</p>
+          <p class="small"><strong>Operational guidance:</strong> Prioritise high-impact NRM packages that combine watershed works with livelihood components (horticulture, agroforestry). Ensure quality monitoring, geotagging of assets and timely wage payments to maintain participation.</p>
 
-                  <h4 style="margin:8px 0 4px">DA-JGUA (Lead: Tribal Welfare Department)</h4>
-                  <p class="small"><strong>Convergence actions:</strong> Work with Forest Department for joint verification and CFR/IFR processing; collaborate with Mines & Geology for TMMC feasibility and compliance; partner with Education for targeted outreach and scholarships; and link with Skill Development for vocational training tied to local resources.</p>
-                  <p class="small"><strong>Operational guidance:</strong> Conduct participatory mapping of forest-dwelling habitations, hold awareness camps for FRA claims, and ensure environmental impact assessments and equitable benefit-sharing for any mineral concessions.</p>
+          <div class="sub" style="margin:6px 0 2px">DA-JGUA (Lead: Tribal Welfare Department)</div>
+          <p class="small"><strong>Convergence actions:</strong> Work with Forest Department for joint verification and CFR/IFR processing; collaborate with Mines & Geology for TMMC feasibility and compliance; partner with Education for targeted outreach and scholarships; and link with Skill Development for vocational training tied to local resources.</p>
+          <p class="small"><strong>Operational guidance:</strong> Conduct participatory mapping of forest-dwelling habitations, hold awareness camps for FRA claims, and ensure environmental impact assessments and equitable benefit-sharing for any mineral concessions.</p>
 
-                  <h4 style="margin:8px 0 4px">Cross-cutting recommendations</h4>
-                  <ul class="bullets">
-                    <li>Establish district-level convergence committees with nominated leads from each department and clear reporting lines.</li>
-                    <li>Use GIS-driven prioritisation (LULC, watershed boundaries, habitations, service coverage) to allocate resources efficiently.</li>
-                    <li>Institutionalise community participation (Panchayats, user groups) for O&M and local monitoring.</li>
-                    <li>Ensure safeguards: environmental assessments for extractive proposals, gender- and social-inclusion checks, and transparent benefit-sharing mechanisms.</li>
-                  </ul>
-                </div>
-              </div>
-              <div class="card" style="margin-top:10px">
-                <h3 class="small">F. Annexure</h3>
-                ${annex}
-              </div>
-              <div style="margin-top:10px">${sourceListHtml}</div>
-            </aside>
+          <div class="sub">Cross-cutting recommendations</div>
+          <ul class="bullets">
+            <li>Establish district-level convergence committees with nominated leads from each department and clear reporting lines.</li>
+            <li>Use GIS-driven prioritisation (LULC, watershed boundaries, habitations, service coverage) to allocate resources efficiently.</li>
+            <li>Institutionalise community participation (Panchayats, user groups) for O&M and local monitoring.</li>
+            <li>Ensure safeguards: environmental assessments for extractive proposals, gender- and social-inclusion checks, and transparent benefit-sharing mechanisms.</li>
+          </ul>
+            </div>
+          </div>
+        </section>
+        <section class="section">
+          <div class="card">
+            <div class="heading">F. Annexure</div>
+            ${annex}
+          </div>
+        </section>
+        <section class="section">
+          ${sourceListHtml}
+        </section>
+          </div>
           </div>
         </div>`;
     } catch {
@@ -400,7 +410,7 @@ export default function DSS() {
       if (!s) return null;
       if (s.startsWith('<') || s.startsWith('```')) return s;
       // sometimes server returns a JSON string
-      try { const p = JSON.parse(s); return extractHtmlFromPayload(p); } catch {}
+      try { const p = JSON.parse(s); return extractHtmlFromPayload(p); } catch { }
       return null;
     }
     // If object, common locations
@@ -419,7 +429,7 @@ export default function DSS() {
     }
     // If payload looks like the expected report shape (has aoi or indicators), produce fallback HTML
     if (payload && (payload.aoi || payload.indicators || payload.meta)) {
-          try { return renderDeterministicReport(payload); } catch { return null; }
+      try { return renderDeterministicReport(payload); } catch { return null; }
     }
     return null;
   }
@@ -430,18 +440,18 @@ export default function DSS() {
     const sub = ['-fill', '-outline', '-line', '-circle', '-label'];
     sub.forEach((s) => {
       const id = `${baseId}${s}`;
-      try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
+      try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) { }
     });
-    try { if (map.getLayer(baseId)) map.removeLayer(baseId); } catch (_) {}
-    try { if (map.getSource(baseId)) map.removeSource(baseId); } catch (_) {}
+    try { if (map.getLayer(baseId)) map.removeLayer(baseId); } catch (_) { }
+    try { if (map.getSource(baseId)) map.removeSource(baseId); } catch (_) { }
   }
 
   function removeVillageBoundary() {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) return;
     const layers = ['dss-village-boundary-fill', 'dss-village-boundary-outline'];
-    layers.forEach((lid) => { try { if (map.getLayer(lid)) map.removeLayer(lid); } catch (_) {} });
-    try { if (map.getSource('dss-village-boundary')) map.removeSource('dss-village-boundary'); } catch (_) {}
+    layers.forEach((lid) => { try { if (map.getLayer(lid)) map.removeLayer(lid); } catch (_) { } });
+    try { if (map.getSource('dss-village-boundary')) map.removeSource('dss-village-boundary'); } catch (_) { }
   }
 
   // WHERE builders
@@ -492,18 +502,18 @@ export default function DSS() {
       });
       if (import.meta.env.DEV) {
         // In StrictMode React will mount->unmount->mount; avoid removing map on the simulated unmount.
-        unloadHandler = () => { try { map.remove(); } catch {} };
+        unloadHandler = () => { try { map.remove(); } catch { } };
         window.addEventListener('beforeunload', unloadHandler);
       }
-      return () => {};
+      return () => { };
     }
     const cleanup = init();
-    return () => { 
+    return () => {
       if (raf) cancelAnimationFrame(raf);
-      if (ro) try { ro.disconnect(); } catch {}
+      if (ro) try { ro.disconnect(); } catch { }
       if (!import.meta.env.DEV) {
         // Production: safe to remove on unmount
-        const m = mapRef.current; if (m) { try { m.remove(); } catch {} mapRef.current = null; }
+        const m = mapRef.current; if (m) { try { m.remove(); } catch { } mapRef.current = null; }
       } else {
         // Dev: rely on beforeunload to cleanup to avoid StrictMode flicker
         if (unloadHandler) window.removeEventListener('beforeunload', unloadHandler);
@@ -531,7 +541,7 @@ export default function DSS() {
           const dt = String(r[DISTRICT_NAME_FIELD] || pickFirst(r, districtFieldCandidates) || '').trim();
           if (dt) out.add(dt);
         }
-        if (!cancelled) setDistrictOptions(Array.from(out).sort((a,b)=>a.localeCompare(b)));
+        if (!cancelled) setDistrictOptions(Array.from(out).sort((a, b) => a.localeCompare(b)));
       } catch (e) {
         if (!cancelled) setError(e?.message || String(e));
       } finally {
@@ -559,7 +569,7 @@ export default function DSS() {
         await addArcGISFeatureLayer(map, {
           id: 'dss-states',
           featureServerUrl: STATES_FS,
-          where: `(State_Name='${(STATE_LABEL_TO_CODE[stateSel]||stateSel).replace(/'/g, "''")}') OR (State_FSI='${String(stateSel).replace(/'/g, "''")}')`,
+          where: `(State_Name='${(STATE_LABEL_TO_CODE[stateSel] || stateSel).replace(/'/g, "''")}') OR (State_FSI='${String(stateSel).replace(/'/g, "''")}')`,
           fit: false,
         });
         if (map.getLayer('dss-states-fill')) {
@@ -602,14 +612,14 @@ export default function DSS() {
           if (map.getLayer('dss-districts-selected-fill')) {
             map.setPaintProperty('dss-districts-selected-fill', 'fill-color', '#f59e0b');
             map.setPaintProperty('dss-districts-selected-fill', 'fill-opacity', 0.45);
-            try { map.moveLayer('dss-districts-selected-fill'); } catch (_) {}
+            try { map.moveLayer('dss-districts-selected-fill'); } catch (_) { }
           }
           if (map.getLayer('dss-districts-selected-outline')) {
             map.setPaintProperty('dss-districts-selected-outline', 'line-color', '#d97706');
             map.setPaintProperty('dss-districts-selected-outline', 'line-width', 2.0);
-            try { map.moveLayer('dss-districts-selected-outline'); } catch (_) {}
+            try { map.moveLayer('dss-districts-selected-outline'); } catch (_) { }
           }
-          try { map.moveLayer('dss-districts-selected-label'); } catch (_) {}
+          try { map.moveLayer('dss-districts-selected-label'); } catch (_) { }
         }
       } catch (e) {
         console.error(e);
@@ -657,7 +667,7 @@ export default function DSS() {
             break;
           }
         }
-        setVillages(Array.from(names).sort((a,b)=>a.localeCompare(b)));
+        setVillages(Array.from(names).sort((a, b) => a.localeCompare(b)));
       } catch (e) {
         console.error('Failed to load villages:', e);
         setVillages([]);
@@ -731,7 +741,7 @@ export default function DSS() {
         data = await resp.text();
       }
       // Guard against race: if user changed state/district mid-fetch, we bail
-      if (stateSel !== qs.get('state') || districtSel !== (qs.get('district')||'') || villageSel !== (qs.get('village')||'')) {
+      if (stateSel !== qs.get('state') || districtSel !== (qs.get('district') || '') || villageSel !== (qs.get('village') || '')) {
         return; // stale
       }
       setReportData({ url: upstreamUrl, data, contentType });
@@ -758,7 +768,7 @@ export default function DSS() {
                 let improved = html.trim();
                 if (improved.startsWith('```')) improved = improved.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
                 // Ensure still same selection
-                if (stateSel === qs.get('state') && districtSel === (qs.get('district')||'') && villageSel === (qs.get('village')||'')) {
+                if (stateSel === qs.get('state') && districtSel === (qs.get('district') || '') && villageSel === (qs.get('village') || '')) {
                   setReportHtml(improved);
                 }
               }
@@ -777,7 +787,7 @@ export default function DSS() {
     } catch (e) {
       // Always surface a report, even on timeout or network failure
       const note = (e?.name === 'AbortError')
-        ? `Timed out after ${Math.round(timeoutMs/1000)}s waiting for report.`
+        ? `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for report.`
         : (e?.message || 'Failed to fetch report');
       setReportError('');
       console.warn('Report fetch error, using fallback:', note);
@@ -867,12 +877,12 @@ export default function DSS() {
                   });
                   if (!resp.ok) {
                     const t = await resp.text();
-                    throw new Error(`PDF failed: ${resp.status} ${t?.slice(0,200)}`);
+                    throw new Error(`PDF failed: ${resp.status} ${t?.slice(0, 200)}`);
                   }
                   const blob = await resp.blob();
                   const url = window.URL.createObjectURL(blob);
                   const a = document.createElement('a');
-                  const filename = [stateSel, districtSel, villageSel].filter(Boolean).join('_').replace(/\s+/g,'_').toLowerCase() || 'dss_report';
+                  const filename = [stateSel, districtSel, villageSel].filter(Boolean).join('_').replace(/\s+/g, '_').toLowerCase() || 'dss_report';
                   a.href = url;
                   a.download = `${filename}.pdf`;
                   document.body.appendChild(a);
@@ -888,7 +898,7 @@ export default function DSS() {
               disabled={!reportData || pdfLoading || reportLoading}
               className="px-2.5 py-1.5 rounded-md text-xs bg-emerald-600 text-white disabled:opacity-50"
             >
-              {pdfLoading ? 'Preparing PDF��' : 'Download PDF'}
+              {pdfLoading ? 'Preparing PDF' : 'Download PDF'}
             </button>
           </div>
         </div>
@@ -902,7 +912,7 @@ export default function DSS() {
           )}
           {!reportLoading && !reportError && reportData && (
             <div className="text-sm">
-{(() => {
+              {(() => {
                 // Prefer server-provided HTML if present
                 const extracted = extractHtmlFromPayload(reportData.data);
                 if (extracted && typeof extracted === 'string') {
